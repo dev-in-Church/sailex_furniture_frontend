@@ -25,7 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { type Product, type Category } from "@/lib/api";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_UR;
+const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
 // Fetcher for SWR
 const fetcher = async (url: string) => {
