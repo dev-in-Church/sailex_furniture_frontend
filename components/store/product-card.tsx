@@ -16,13 +16,19 @@ interface ProductCardProps {
 export function ProductCard({ product }: ProductCardProps) {
   const { addToCart } = useCart();
   const [isAdding, setIsAdding] = useState(false);
-  
-  const hasDiscount = product.compare_at_price && parseFloat(product.compare_at_price) > parseFloat(product.price);
+
+  const hasDiscount =
+    product.compare_at_price &&
+    parseFloat(product.compare_at_price) > parseFloat(product.price);
   const discountPercent = hasDiscount
-    ? Math.round((1 - parseFloat(product.price) / parseFloat(product.compare_at_price!)) * 100)
+    ? Math.round(
+        (1 -
+          parseFloat(product.price) / parseFloat(product.compare_at_price!)) *
+          100,
+      )
     : 0;
 
-  const imageUrl = product.images?.[0] || "/images/placeholder-product.jpg";
+  const imageUrl = product.images?.[0] || "/placeholder.png";
 
   const handleAddToCart = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -37,17 +43,26 @@ export function ProductCard({ product }: ProductCardProps) {
     }
   };
 
+  const [imgSrc, setImgSrc] = useState(
+    product.images?.[0] || "/placeholder.png",
+  );
+
   return (
     <Link href={`/products/${product.slug}`} className="group">
       <div className="bg-card rounded-lg overflow-hidden border border-border hover:border-accent transition-colors">
         {/* Image */}
         <div className="relative aspect-square bg-secondary">
           <Image
-            src={imageUrl}
+            src={imgSrc}
             alt={product.name}
             fill
             className="object-cover group-hover:scale-105 transition-transform duration-300"
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+            onError={() => {
+              if (imgSrc !== "/placeholder.png") {
+                setImgSrc("/placeholder.png");
+              }
+            }}
           />
           {/* Badges */}
           <div className="absolute top-3 left-3 flex flex-col gap-2">
@@ -88,7 +103,9 @@ export function ProductCard({ product }: ProductCardProps) {
         {/* Content */}
         <div className="p-4">
           {product.category_name && (
-            <p className="text-xs text-muted-foreground mb-1">{product.category_name}</p>
+            <p className="text-xs text-muted-foreground mb-1">
+              {product.category_name}
+            </p>
           )}
           <h3 className="font-medium text-foreground group-hover:text-accent transition-colors line-clamp-1">
             {product.name}

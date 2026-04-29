@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import Image from "next/image";
 import { useSearchParams, useRouter } from "next/navigation";
 import useSWR from "swr";
@@ -132,16 +133,25 @@ function ProductCard({ product }: { product: Product }) {
     });
   };
 
+  const [imgSrc, setImgSrc] = useState(
+    product.images?.[0] || "/placeholder.png",
+  );
+
   return (
     <Link href={`/products/${product.slug}`} className="group block">
       <div className="bg-card rounded-lg border border-border overflow-hidden transition-shadow hover:shadow-lg">
         {/* Image */}
         <div className="relative aspect-square bg-secondary">
           <Image
-            src={product.images[0] || "/images/hero-living-room.jpg"}
+            src={imgSrc}
             alt={product.name}
             fill
             className="object-cover group-hover:scale-105 transition-transform duration-300"
+            onError={() => {
+              if (imgSrc !== "/placeholder.png") {
+                setImgSrc("/placeholder.png");
+              }
+            }}
           />
           {hasDiscount && (
             <span className="absolute top-2 left-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded">

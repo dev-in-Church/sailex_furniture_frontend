@@ -430,6 +430,10 @@ function ProductCardCompact({ product }: { product: Product }) {
       )
     : 0;
 
+  const [imgSrc, setImgSrc] = useState(
+    product.images?.[0] || "/placeholder.png",
+  );
+
   return (
     <Link
       href={`/products/${product.slug}`}
@@ -437,10 +441,15 @@ function ProductCardCompact({ product }: { product: Product }) {
     >
       <div className="relative aspect-square">
         <Image
-          src={product.images?.[0] || "/images/hero-living-room.jpg"}
+          src={imgSrc}
           alt={product.name}
           fill
           className="object-cover rounded-t-lg"
+          onError={() => {
+            if (imgSrc !== "/placeholder.png") {
+              setImgSrc("/placeholder.png");
+            }
+          }}
         />
         {hasDiscount && (
           <span className="absolute top-2 left-2 px-2 py-1 bg-accent text-accent-foreground text-xs font-bold rounded">
@@ -599,9 +608,9 @@ export default function HomePage() {
           </div>
 
           {/* Side Banners - Desktop */}
-          <div className="hidden lg:flex w-56 border-2 border-primary rounded-sm">
+          <div className="hidden lg:flex w-56 border overflow-hidden border-primary rounded-sm">
             <Image
-              src="/logo.png"
+              src="/placeholder.png"
               alt="Sailex Furnitures"
               width={100}
               height={50}
