@@ -327,6 +327,7 @@ const categoryIcons: Record<string, React.ElementType> = {
 };
 
 // Product Slider Component
+// Product Slider Component
 function ProductSlider({
   title,
   products,
@@ -343,24 +344,39 @@ function ProductSlider({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(true);
-  const [isMobile, setIsMobile] = useState(false);
+  const [cardsPerView, setCardsPerView] = useState(5);
+  const [isDragging, setIsDragging] = useState(false);
+  const [startX, setStartX] = useState(0);
+  const [scrollLeft, setScrollLeft] = useState(0);
 
   useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 640);
+    const updateCardsPerView = () => {
+      const width = window.innerWidth;
+      if (width < 640) {
+        setCardsPerView(2); // Change this from 3 to 2
+      } else if (width < 768) {
+        setCardsPerView(2);
+      } else if (width < 1024) {
+        setCardsPerView(3);
+      } else if (width < 1280) {
+        setCardsPerView(4);
+      } else {
+        setCardsPerView(5);
+      }
     };
-    checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
+
+    updateCardsPerView();
+    window.addEventListener("resize", updateCardsPerView);
+    return () => window.removeEventListener("resize", updateCardsPerView);
   }, []);
 
   const checkScroll = () => {
     const container = scrollContainerRef.current;
     if (container) {
-      setShowLeftArrow(container.scrollLeft > 0);
+      setShowLeftArrow(container.scrollLeft > 20);
       setShowRightArrow(
         container.scrollLeft + container.clientWidth <
-          container.scrollWidth - 10,
+          container.scrollWidth - 20,
       );
     }
   };
@@ -368,11 +384,51 @@ function ProductSlider({
   const scroll = (direction: "left" | "right") => {
     const container = scrollContainerRef.current;
     if (container) {
-      const scrollAmount = isMobile ? 280 : 320;
+      const cardWidth = container.children[0]?.clientWidth || 0;
+      const scrollAmount = cardWidth * cardsPerView;
       container.scrollBy({
         left: direction === "left" ? -scrollAmount : scrollAmount,
         behavior: "smooth",
       });
+    }
+  };
+
+  // Drag to scroll handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    setStartX(e.pageX - (scrollContainerRef.current?.offsetLeft || 0));
+    setScrollLeft(scrollContainerRef.current?.scrollLeft || 0);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return;
+    e.preventDefault();
+    const x = e.pageX - (scrollContainerRef.current?.offsetLeft || 0);
+    const walk = (x - startX) * 1.5;
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollLeft = scrollLeft - walk;
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setIsDragging(true);
+    setStartX(
+      e.touches[0].pageX - (scrollContainerRef.current?.offsetLeft || 0),
+    );
+    setScrollLeft(scrollContainerRef.current?.scrollLeft || 0);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging) return;
+    const x =
+      e.touches[0].pageX - (scrollContainerRef.current?.offsetLeft || 0);
+    const walk = (x - startX) * 1.5;
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollLeft = scrollLeft - walk;
     }
   };
 
@@ -385,13 +441,18 @@ function ProductSlider({
     }
   }, [products]);
 
-  const getCardsPerView = () => {
-    if (typeof window === "undefined") return 5;
-    if (window.innerWidth < 640) return 1;
-    if (window.innerWidth < 768) return 2;
-    if (window.innerWidth < 1024) return 3;
-    if (window.innerWidth < 1280) return 4;
-    return 5;
+  // Calculate card width based on cards per view
+  const getCardWidthClass = () => {
+    if (cardsPerView === 2) {
+      return "w-[calc(50%-8px)] min-w-[140px]"; // 2 cards on mobile
+    }
+    if (cardsPerView === 3) {
+      return "w-[calc(33.333%-10.666px)] min-w-[130px]";
+    }
+    if (cardsPerView === 4) {
+      return "w-[calc(25%-12px)] min-w-[170px]";
+    }
+    return "w-[calc(20%-12.8px)] min-w-[200px]";
   };
 
   return (
@@ -410,7 +471,8 @@ function ProductSlider({
         </Link>
       </div>
       <div className="relative group">
-        {showLeftArrow && (
+        {/* Left Arrow */}
+        {showLeftArrow && !isDragging && (
           <button
             onClick={() => scroll("left")}
             className="absolute left-2 top-1/2 -translate-y-1/2 z-10 p-2 bg-white/90 hover:bg-white rounded-full shadow-lg border border-border transition-all hidden sm:flex items-center justify-center"
@@ -419,38 +481,56 @@ function ProductSlider({
             <ChevronLeft className="h-5 w-5 text-foreground" />
           </button>
         )}
+
+        {/* Slider Container */}
         <div
           ref={scrollContainerRef}
-          className="flex overflow-x-auto scrollbar-hide gap-4 p-4 snap-x snap-mandatory"
+          className={`flex overflow-x-auto gap-3 sm:gap-4 p-4 snap-mandatory ${
+            isDragging ? "cursor-grabbing select-none" : "cursor-grab"
+          }`}
           style={{
             scrollbarWidth: "none",
             msOverflowStyle: "none",
+            WebkitOverflowScrolling: "touch",
           }}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleMouseUp}
         >
           <style jsx>{`
             div::-webkit-scrollbar {
               display: none;
             }
           `}</style>
+
           {isLoading
-            ? [...Array(getCardsPerView())].map((_, i) => (
+            ? [...Array(cardsPerView)].map((_, i) => (
                 <div
                   key={i}
-                  className="flex-none w-[calc(50%-8px)] sm:w-[calc(33.33%-11px)] md:w-[calc(25%-12px)] lg:w-[calc(20%-13px)] min-w-[200px] snap-start"
+                  className={`flex-none ${getCardWidthClass()} snap-start`}
                 >
-                  <ProductCardSkeleton />
+                  <ProductCardCompactSkeleton />
                 </div>
               ))
             : products.map((product) => (
                 <div
                   key={product.id}
-                  className="flex-none w-[calc(50%-8px)] sm:w-[calc(33.33%-11px)] md:w-[calc(25%-12px)] lg:w-[calc(20%-13px)] min-w-[200px] snap-start"
+                  className={`flex-none ${getCardWidthClass()} snap-start`}
                 >
-                  <ProductCardCompact product={product} />
+                  <ProductCardCompact
+                    product={product}
+                    isMobile={cardsPerView === 3}
+                  />
                 </div>
               ))}
         </div>
-        {showRightArrow && products.length > getCardsPerView() && (
+
+        {/* Right Arrow */}
+        {showRightArrow && !isDragging && products.length > cardsPerView && (
           <button
             onClick={() => scroll("right")}
             className="absolute right-2 top-1/2 -translate-y-1/2 z-10 p-2 bg-white/90 hover:bg-white rounded-full shadow-lg border border-border transition-all hidden sm:flex items-center justify-center"
@@ -459,8 +539,155 @@ function ProductSlider({
             <ChevronRight className="h-5 w-5 text-foreground" />
           </button>
         )}
+
+        {/* Scroll Indicators - Mobile */}
+        <div className="flex justify-center gap-1.5 mt-2 pb-2 sm:hidden">
+          {products
+            .slice(0, Math.ceil(products.length / cardsPerView))
+            .map((_, idx) => {
+              const container = scrollContainerRef.current;
+              const isActive = container
+                ? Math.abs(
+                    container.scrollLeft /
+                      (container.scrollWidth - container.clientWidth) -
+                      idx / (Math.ceil(products.length / cardsPerView) - 1),
+                  ) < 0.1
+                : idx === 0;
+              return (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    const container = scrollContainerRef.current;
+                    if (container) {
+                      const cardWidth = container.children[0]?.clientWidth || 0;
+                      container.scrollTo({
+                        left: cardWidth * cardsPerView * idx,
+                        behavior: "smooth",
+                      });
+                    }
+                  }}
+                  className={`h-1.5 rounded-full transition-all ${
+                    isActive ? "w-4 bg-accent" : "w-1.5 bg-muted-foreground/30"
+                  }`}
+                />
+              );
+            })}
+        </div>
       </div>
     </section>
+  );
+}
+
+// Updated Product Card with mobile optimization
+function ProductCardCompact({
+  product,
+  isMobile = false,
+}: {
+  product: Product;
+  isMobile?: boolean;
+}) {
+  const hasDiscount =
+    product.compare_at_price &&
+    parseFloat(product.compare_at_price) > parseFloat(product.price);
+  const discountPercent = hasDiscount
+    ? Math.round(
+        (1 -
+          parseFloat(product.price) / parseFloat(product.compare_at_price!)) *
+          100,
+      )
+    : 0;
+
+  const [imgSrc, setImgSrc] = useState(
+    product.images?.[0] || "/placeholder.png",
+  );
+
+  return (
+    <Link
+      href={`/products/${product.slug}`}
+      className="group block bg-card rounded-sm border border-border hover:shadow-lg transition-shadow h-full"
+    >
+      <div className="relative aspect-square">
+        <Image
+          src={imgSrc}
+          alt={product.name}
+          fill
+          className="object-cover rounded-t-lg"
+          sizes={
+            isMobile
+              ? "33vw"
+              : "(max-width: 640px) 33vw, (max-width: 768px) 50vw, (max-width: 1024px) 25vw, 20vw"
+          }
+          onError={() => {
+            if (imgSrc !== "/placeholder.png") {
+              setImgSrc("/placeholder.png");
+            }
+          }}
+        />
+        {hasDiscount && (
+          <span
+            className={`absolute top-2 left-2 px-1.5 py-0.5 bg-accent text-accent-foreground font-bold rounded ${
+              isMobile ? "text-[10px]" : "text-xs"
+            }`}
+          >
+            -{discountPercent}%
+          </span>
+        )}
+      </div>
+      <div className="p-2 sm:p-3">
+        <h3
+          className={`font-medium text-foreground truncate line-clamp-2 group-hover:text-accent transition-colors ${
+            isMobile ? "text-xs" : "text-sm"
+          }`}
+        >
+          {product.name}
+        </h3>
+        <div className="mt-1 flex flex-col sm:mt-2">
+          <span
+            className={`font-bold text-primary ${
+              isMobile ? "text-xs" : "text-base"
+            }`}
+          >
+            KES {parseInt(product.price).toLocaleString()}
+          </span>
+          {hasDiscount && (
+            <span
+              className={`ml-1 text-muted-foreground line-through ${
+                isMobile ? "text-[9px]" : "text-xs"
+              }`}
+            >
+              KES {parseInt(product.compare_at_price!).toLocaleString()}
+            </span>
+          )}
+        </div>
+        {!isMobile && (
+          <div className="flex items-center gap-1 mt-1">
+            <div className="flex">
+              {[...Array(5)].map((_, i) => (
+                <Star
+                  key={i}
+                  className={`h-3 w-3 ${i < 4 ? "fill-amber-400 text-amber-400" : "text-muted"}`}
+                />
+              ))}
+            </div>
+            <span className="text-xs text-muted-foreground">(24)</span>
+          </div>
+        )}
+      </div>
+    </Link>
+  );
+}
+
+// Skeleton for compact product card
+function ProductCardCompactSkeleton() {
+  return (
+    <div className="bg-card rounded-lg border border-border animate-pulse h-full">
+      <div className="aspect-square bg-muted rounded-t-lg" />
+      <div className="p-2 sm:p-3 space-y-1.5 sm:space-y-2">
+        <div className="h-3 sm:h-4 bg-muted rounded w-3/4" />
+        <div className="h-3 sm:h-4 bg-muted rounded w-1/2" />
+        <div className="h-2 sm:h-3 bg-muted rounded w-1/3" />
+      </div>
+    </div>
   );
 }
 
@@ -527,75 +754,6 @@ function HeroSlider() {
         <ChevronRight className="h-5 w-5" />
       </button>
     </div>
-  );
-}
-
-function ProductCardCompact({ product }: { product: Product }) {
-  const hasDiscount =
-    product.compare_at_price &&
-    parseFloat(product.compare_at_price) > parseFloat(product.price);
-  const discountPercent = hasDiscount
-    ? Math.round(
-        (1 -
-          parseFloat(product.price) / parseFloat(product.compare_at_price!)) *
-          100,
-      )
-    : 0;
-
-  const [imgSrc, setImgSrc] = useState(
-    product.images?.[0] || "/placeholder.png",
-  );
-
-  return (
-    <Link
-      href={`/products/${product.slug}`}
-      className="group block bg-card rounded-lg border border-border hover:shadow-lg transition-shadow h-full"
-    >
-      <div className="relative aspect-square">
-        <Image
-          src={imgSrc}
-          alt={product.name}
-          fill
-          className="object-cover rounded-t-lg"
-          onError={() => {
-            if (imgSrc !== "/placeholder.png") {
-              setImgSrc("/placeholder.png");
-            }
-          }}
-        />
-        {hasDiscount && (
-          <span className="absolute top-2 left-2 px-2 py-1 bg-accent text-accent-foreground text-xs font-bold rounded">
-            -{discountPercent}%
-          </span>
-        )}
-      </div>
-      <div className="p-3">
-        <h3 className="text-sm font-medium text-foreground line-clamp-2 group-hover:text-accent transition-colors">
-          {product.name}
-        </h3>
-        <div className="mt-2">
-          <span className="text-base font-bold text-primary">
-            KES {parseInt(product.price).toLocaleString()}
-          </span>
-          {hasDiscount && (
-            <span className="ml-2 text-xs text-muted-foreground line-through">
-              KES {parseInt(product.compare_at_price!).toLocaleString()}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-1 mt-1">
-          <div className="flex">
-            {[...Array(5)].map((_, i) => (
-              <Star
-                key={i}
-                className={`h-3 w-3 ${i < 4 ? "fill-amber-400 text-amber-400" : "text-muted"}`}
-              />
-            ))}
-          </div>
-          <span className="text-xs text-muted-foreground">(24)</span>
-        </div>
-      </div>
-    </Link>
   );
 }
 
@@ -685,7 +843,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-secondary/30">
-      <div className="mx-auto max-w-7xl px-4 py-4">
+      <div className="mx-auto max-w-7xl px-2 py-4">
         {/* Main Hero Section with Categories */}
         <div className="flex gap-4 mb-6">
           {/* Categories Sidebar - Desktop */}

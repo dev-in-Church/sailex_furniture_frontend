@@ -80,7 +80,7 @@ export function Header() {
         <div className="hidden md:block bg-accent border-b border-primary-foreground/10">
           <div className="mx-auto max-w-7xl px-4 flex items-center justify-between h-8 text-xs text-primary-foreground/80">
             <div className="flex items-center gap-4">
-              <span>+254 700 000 000</span>
+              <span>+254 706 169 006</span>
               <span className="h-3 w-px bg-primary-foreground/30" />
               <Link
                 href="/help"
