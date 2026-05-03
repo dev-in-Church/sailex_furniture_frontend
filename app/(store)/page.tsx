@@ -2,17 +2,15 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import useSWR from "swr";
 import {
   ChevronRight,
   ChevronLeft,
-  Zap,
   Truck,
   Shield,
   Headphones,
   Star,
-  Clock,
   ArrowRight,
   Sofa,
   BedDouble,
@@ -21,6 +19,8 @@ import {
   Lamp,
   DoorOpen,
   Loader2,
+  Wallet,
+  ThumbsUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { type Product, type Category } from "@/lib/api";
@@ -180,6 +180,42 @@ const mockProducts: Product[] = [
     status: "active",
     created_at: new Date().toISOString(),
   },
+  {
+    id: "9",
+    name: "Minimalist Bookshelf",
+    slug: "minimalist-bookshelf",
+    description: "Modern 5-tier bookshelf",
+    price: "18999",
+    compare_at_price: null,
+    sku: "BKS-MIN-001",
+    stock_quantity: 14,
+    category_id: "6",
+    category_name: "Storage",
+    category_slug: "storage",
+    images: ["/images/products/sofa-1.jpg"],
+    specifications: {},
+    featured: false,
+    status: "active",
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: "10",
+    name: "Patio Lounge Set",
+    slug: "patio-lounge-set",
+    description: "Weather-resistant outdoor furniture set",
+    price: "45999",
+    compare_at_price: "59999",
+    sku: "OUT-PAT-001",
+    stock_quantity: 6,
+    category_id: "5",
+    category_name: "Outdoor",
+    category_slug: "outdoor",
+    images: ["/images/hero-living-room.jpg"],
+    specifications: {},
+    featured: false,
+    status: "active",
+    created_at: new Date().toISOString(),
+  },
 ];
 
 const mockCategories: Category[] = [
@@ -254,16 +290,16 @@ const mockCategories: Category[] = [
 const banners = [
   {
     id: 1,
-    image: "/images/banners/flash-sale.jpg",
-    title: "Flash Sale",
+    image: "/images/banners/banner.png",
+    title: "Premium Furniture",
     subtitle: "Up to 50% Off",
-    description: "Premium sofas and living room furniture",
+    description: "Luxury sofas and living room furniture",
     link: "/products?sale=true",
     color: "from-amber-900/90",
   },
   {
     id: 2,
-    image: "/images/banners/new-arrivals.jpg",
+    image: "/images/banners/banner.png",
     title: "New Arrivals",
     subtitle: "2024 Collection",
     description: "Discover the latest bedroom furniture",
@@ -272,7 +308,7 @@ const banners = [
   },
   {
     id: 3,
-    image: "/images/hero-living-room.jpg",
+    image: "/images/banners/banner.png",
     title: "Free Delivery",
     subtitle: "On Orders Above KES 50,000",
     description: "Shop now and save on shipping",
@@ -290,46 +326,141 @@ const categoryIcons: Record<string, React.ElementType> = {
   storage: Lamp,
 };
 
-function CountdownTimer({ targetDate }: { targetDate: Date }) {
-  const [timeLeft, setTimeLeft] = useState({
-    hours: 0,
-    minutes: 0,
-    seconds: 0,
-  });
+// Product Slider Component
+function ProductSlider({
+  title,
+  products,
+  isLoading,
+  viewAllLink,
+  accentColor = "accent",
+}: {
+  title: string;
+  products: Product[];
+  isLoading: boolean;
+  viewAllLink: string;
+  accentColor?: string;
+}) {
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [showLeftArrow, setShowLeftArrow] = useState(false);
+  const [showRightArrow, setShowRightArrow] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      const now = new Date().getTime();
-      const distance = targetDate.getTime() - now;
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
 
-      if (distance > 0) {
-        setTimeLeft({
-          hours: Math.floor(
-            (distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60),
-          ),
-          minutes: Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60)),
-          seconds: Math.floor((distance % (1000 * 60)) / 1000),
-        });
-      }
-    }, 1000);
+  const checkScroll = () => {
+    const container = scrollContainerRef.current;
+    if (container) {
+      setShowLeftArrow(container.scrollLeft > 0);
+      setShowRightArrow(
+        container.scrollLeft + container.clientWidth <
+          container.scrollWidth - 10,
+      );
+    }
+  };
 
-    return () => clearInterval(timer);
-  }, [targetDate]);
+  const scroll = (direction: "left" | "right") => {
+    const container = scrollContainerRef.current;
+    if (container) {
+      const scrollAmount = isMobile ? 280 : 320;
+      container.scrollBy({
+        left: direction === "left" ? -scrollAmount : scrollAmount,
+        behavior: "smooth",
+      });
+    }
+  };
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (container) {
+      container.addEventListener("scroll", checkScroll);
+      checkScroll();
+      return () => container.removeEventListener("scroll", checkScroll);
+    }
+  }, [products]);
+
+  const getCardsPerView = () => {
+    if (typeof window === "undefined") return 5;
+    if (window.innerWidth < 640) return 1;
+    if (window.innerWidth < 768) return 2;
+    if (window.innerWidth < 1024) return 3;
+    if (window.innerWidth < 1280) return 4;
+    return 5;
+  };
 
   return (
-    <div className="flex items-center gap-1">
-      <div className="bg-foreground text-background px-2 py-1 rounded text-sm font-bold min-w-[32px] text-center">
-        {String(timeLeft.hours).padStart(2, "0")}
+    <section className="bg-card rounded-lg border border-border mb-6 overflow-hidden">
+      <div
+        className={`px-4 py-3 border-b border-border flex flex-wrap items-center justify-between gap-3 ${
+          accentColor === "primary" ? "bg-primary/5" : ""
+        }`}
+      >
+        <h2 className="text-lg font-bold text-foreground">{title}</h2>
+        <Link
+          href={viewAllLink}
+          className="text-accent text-sm font-medium hover:underline flex items-center gap-1"
+        >
+          See All <ArrowRight className="h-4 w-4" />
+        </Link>
       </div>
-      <span className="text-foreground font-bold">:</span>
-      <div className="bg-foreground text-background px-2 py-1 rounded text-sm font-bold min-w-[32px] text-center">
-        {String(timeLeft.minutes).padStart(2, "0")}
+      <div className="relative group">
+        {showLeftArrow && (
+          <button
+            onClick={() => scroll("left")}
+            className="absolute left-2 top-1/2 -translate-y-1/2 z-10 p-2 bg-white/90 hover:bg-white rounded-full shadow-lg border border-border transition-all hidden sm:flex items-center justify-center"
+            aria-label="Previous"
+          >
+            <ChevronLeft className="h-5 w-5 text-foreground" />
+          </button>
+        )}
+        <div
+          ref={scrollContainerRef}
+          className="flex overflow-x-auto scrollbar-hide gap-4 p-4 snap-x snap-mandatory"
+          style={{
+            scrollbarWidth: "none",
+            msOverflowStyle: "none",
+          }}
+        >
+          <style jsx>{`
+            div::-webkit-scrollbar {
+              display: none;
+            }
+          `}</style>
+          {isLoading
+            ? [...Array(getCardsPerView())].map((_, i) => (
+                <div
+                  key={i}
+                  className="flex-none w-[calc(50%-8px)] sm:w-[calc(33.33%-11px)] md:w-[calc(25%-12px)] lg:w-[calc(20%-13px)] min-w-[200px] snap-start"
+                >
+                  <ProductCardSkeleton />
+                </div>
+              ))
+            : products.map((product) => (
+                <div
+                  key={product.id}
+                  className="flex-none w-[calc(50%-8px)] sm:w-[calc(33.33%-11px)] md:w-[calc(25%-12px)] lg:w-[calc(20%-13px)] min-w-[200px] snap-start"
+                >
+                  <ProductCardCompact product={product} />
+                </div>
+              ))}
+        </div>
+        {showRightArrow && products.length > getCardsPerView() && (
+          <button
+            onClick={() => scroll("right")}
+            className="absolute right-2 top-1/2 -translate-y-1/2 z-10 p-2 bg-white/90 hover:bg-white rounded-full shadow-lg border border-border transition-all hidden sm:flex items-center justify-center"
+            aria-label="Next"
+          >
+            <ChevronRight className="h-5 w-5 text-foreground" />
+          </button>
+        )}
       </div>
-      <span className="text-foreground font-bold">:</span>
-      <div className="bg-foreground text-background px-2 py-1 rounded text-sm font-bold min-w-[32px] text-center">
-        {String(timeLeft.seconds).padStart(2, "0")}
-      </div>
-    </div>
+    </section>
   );
 }
 
@@ -344,7 +475,7 @@ function HeroSlider() {
   }, []);
 
   return (
-    <div className="relative h-[300px] md:h-[350px] rounded-lg overflow-hidden">
+    <div className="relative h-[200px] md:h-[350px] aspect-auto rounded-sm overflow-hidden">
       {banners.map((banner, index) => (
         <Link
           key={banner.id}
@@ -359,28 +490,9 @@ function HeroSlider() {
             src={banner.image}
             alt={banner.title}
             fill
-            className="object-cover"
+            className="object-cover]"
             priority={index === 0}
           />
-          <div
-            className={`absolute inset-0 bg-gradient-to-r ${banner.color} to-transparent`}
-          />
-          <div className="absolute inset-0 flex items-center">
-            <div className="px-8 md:px-12 max-w-lg">
-              <span className="inline-block px-3 py-1 bg-accent text-accent-foreground text-xs font-semibold rounded mb-3">
-                {banner.subtitle}
-              </span>
-              <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-2">
-                {banner.title}
-              </h2>
-              <p className="text-white/80 text-sm md:text-base mb-4">
-                {banner.description}
-              </p>
-              <Button className="gap-2">
-                Shop Now <ArrowRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
         </Link>
       ))}
 
@@ -437,7 +549,7 @@ function ProductCardCompact({ product }: { product: Product }) {
   return (
     <Link
       href={`/products/${product.slug}`}
-      className="group block bg-card rounded-lg border border-border hover:shadow-lg transition-shadow"
+      className="group block bg-card rounded-lg border border-border hover:shadow-lg transition-shadow h-full"
     >
       <div className="relative aspect-square">
         <Image
@@ -489,7 +601,7 @@ function ProductCardCompact({ product }: { product: Product }) {
 
 function ProductCardSkeleton() {
   return (
-    <div className="bg-card rounded-lg border border-border animate-pulse">
+    <div className="bg-card rounded-lg border border-border animate-pulse h-full">
       <div className="aspect-square bg-muted rounded-t-lg" />
       <div className="p-3 space-y-2">
         <div className="h-4 bg-muted rounded w-3/4" />
@@ -501,8 +613,6 @@ function ProductCardSkeleton() {
 }
 
 export default function HomePage() {
-  const flashSaleEndTime = new Date(Date.now() + 8 * 60 * 60 * 1000); // 8 hours from now
-
   // Fetch products from API
   const { data: productsData, isLoading: productsLoading } = useSWR(
     `${API_BASE}/products?limit=20`,
@@ -542,7 +652,9 @@ export default function HomePage() {
   const categories: Category[] =
     categoriesData?.categories || categoriesData?.all || mockCategories;
 
-  // Filter products with discounts for flash sale
+  // Filter products for different sections
+  const bestSellerProducts = products.slice(0, 10);
+  const newArrivalsProducts = [...products].reverse().slice(0, 10);
   const saleProducts = products.filter(
     (p) =>
       p.compare_at_price &&
@@ -560,14 +672,19 @@ export default function HomePage() {
       p.category_slug === "bedroom" ||
       p.category_name?.toLowerCase().includes("bedroom"),
   );
+  const diningProducts = products.filter(
+    (p) =>
+      p.category_slug === "dining" ||
+      p.category_name?.toLowerCase().includes("dining"),
+  );
+  const officeProducts = products.filter(
+    (p) =>
+      p.category_slug === "office" ||
+      p.category_name?.toLowerCase().includes("office"),
+  );
 
   return (
     <div className="min-h-screen bg-secondary/30">
-      {/* Top Banner */}
-      {/* <div className="bg-accent text-accent-foreground py-2 text-center text-sm font-medium">
-        Free Delivery on orders above KES 50,000 | Use code SAILEX10 for 10% off
-      </div> */}
-
       <div className="mx-auto max-w-7xl px-4 py-4">
         {/* Main Hero Section with Categories */}
         <div className="flex gap-4 mb-6">
@@ -607,8 +724,8 @@ export default function HomePage() {
             <HeroSlider />
           </div>
 
-          {/* Side Banners - Desktop */}
-          <div className="hidden lg:flex w-56 border overflow-hidden border-primary rounded-sm">
+          {/* Side Banner - Desktop */}
+          <div className="hidden lg:flex w-60 border overflow-hidden border-primary rounded-sm">
             <Image
               src="/placeholder.png"
               alt="Sailex Furnitures"
@@ -619,73 +736,21 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Features Bar */}
-        {/* <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          {[
-            {
-              icon: Truck,
-              title: "Free Delivery",
-              desc: "Orders over KES 50K",
-            },
-            {
-              icon: Shield,
-              title: "2 Year Warranty",
-              desc: "Quality guaranteed",
-            },
-            {
-              icon: Headphones,
-              title: "24/7 Support",
-              desc: "Expert assistance",
-            },
-            { icon: Clock, title: "Easy Returns", desc: "30-day returns" },
-          ].map((feature) => (
-            <div
-              key={feature.title}
-              className="flex items-center gap-3 bg-card rounded-lg border border-border p-4"
-            >
-              <div className="p-2 bg-accent/10 rounded-lg">
-                <feature.icon className="h-5 w-5 text-accent" />
-              </div>
-              <div>
-                <p className="font-medium text-foreground text-sm">
-                  {feature.title}
-                </p>
-                <p className="text-xs text-muted-foreground">{feature.desc}</p>
-              </div>
-            </div>
-          ))}
-        </div> */}
+        {/* Best Sellers Slider */}
+        <ProductSlider
+          title="Best Sellers"
+          products={bestSellerProducts}
+          isLoading={productsLoading}
+          viewAllLink="/products?sort=popular"
+        />
 
-        {/* Flash Sale Section */}
-        <section className="bg-card rounded-lg border border-border mb-6 overflow-hidden">
-          <div className="bg-gradient-to-r from-accent to-amber-600 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <Zap className="h-6 w-6 text-white fill-white" />
-              <h2 className="text-lg font-bold text-white">Flash Sale</h2>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="text-white/90 text-sm">Ends in:</span>
-              <CountdownTimer targetDate={flashSaleEndTime} />
-            </div>
-            <Link
-              href="/products?sale=true"
-              className="text-white text-sm font-medium hover:underline flex items-center gap-1"
-            >
-              See All <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
-          <div className="p-4">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {productsLoading
-                ? [...Array(5)].map((_, i) => <ProductCardSkeleton key={i} />)
-                : (saleProducts.length > 0 ? saleProducts : products)
-                    .slice(0, 5)
-                    .map((product) => (
-                      <ProductCardCompact key={product.id} product={product} />
-                    ))}
-            </div>
-          </div>
-        </section>
+        {/* New Arrivals Slider */}
+        <ProductSlider
+          title="New Arrivals"
+          products={newArrivalsProducts}
+          isLoading={productsLoading}
+          viewAllLink="/products?sort=newest"
+        />
 
         {/* Categories Grid - Mobile */}
         <section className="lg:hidden mb-6">
@@ -713,110 +778,58 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Top Deals Section */}
-        <section className="bg-card rounded-lg border border-border mb-6 overflow-hidden">
-          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-            <h2 className="text-lg font-bold text-foreground">Top Deals</h2>
-            <Link
-              href="/products?deals=true"
-              className="text-accent text-sm font-medium hover:underline flex items-center gap-1"
-            >
-              See All <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
-          <div className="p-4">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {productsLoading
-                ? [...Array(5)].map((_, i) => <ProductCardSkeleton key={i} />)
-                : products
-                    .slice(0, 5)
-                    .map((product) => (
-                      <ProductCardCompact key={product.id} product={product} />
-                    ))}
-            </div>
-          </div>
-        </section>
+        {/* Living Room Furniture Slider */}
+        <ProductSlider
+          title="Living Room Furniture"
+          products={
+            livingRoomProducts.length > 0 ? livingRoomProducts : products
+          }
+          isLoading={productsLoading}
+          viewAllLink="/categories/living-room"
+        />
 
-        {/* Living Room Furniture */}
-        <section className="bg-card rounded-lg border border-border mb-6 overflow-hidden">
-          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-            <h2 className="text-lg font-bold text-foreground">
-              Living Room Furniture
-            </h2>
-            <Link
-              href="/categories/living-room"
-              className="text-accent text-sm font-medium hover:underline flex items-center gap-1"
-            >
-              See All <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
-          <div className="p-4">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {productsLoading
-                ? [...Array(5)].map((_, i) => <ProductCardSkeleton key={i} />)
-                : (livingRoomProducts.length > 0
-                    ? livingRoomProducts
-                    : products
-                  )
-                    .slice(0, 5)
-                    .map((product) => (
-                      <ProductCardCompact key={product.id} product={product} />
-                    ))}
-            </div>
-          </div>
-        </section>
+        {/* Bedroom Furniture Slider */}
+        <ProductSlider
+          title="Bedroom Furniture"
+          products={bedroomProducts.length > 0 ? bedroomProducts : products}
+          isLoading={productsLoading}
+          viewAllLink="/categories/bedroom"
+        />
 
-        {/* Bedroom Furniture */}
-        <section className="bg-card rounded-lg border border-border mb-6 overflow-hidden">
-          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-            <h2 className="text-lg font-bold text-foreground">
-              Bedroom Furniture
-            </h2>
-            <Link
-              href="/categories/bedroom"
-              className="text-accent text-sm font-medium hover:underline flex items-center gap-1"
-            >
-              See All <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
-          <div className="p-4">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {productsLoading
-                ? [...Array(5)].map((_, i) => <ProductCardSkeleton key={i} />)
-                : (bedroomProducts.length > 0 ? bedroomProducts : products)
-                    .slice(0, 5)
-                    .map((product) => (
-                      <ProductCardCompact key={product.id} product={product} />
-                    ))}
-            </div>
-          </div>
-        </section>
+        {/* Dining Room Furniture Slider */}
+        <ProductSlider
+          title="Dining Room Furniture"
+          products={diningProducts.length > 0 ? diningProducts : products}
+          isLoading={productsLoading}
+          viewAllLink="/categories/dining"
+        />
 
-        {/* Featured Products */}
-        <section className="bg-card rounded-lg border border-border mb-6 overflow-hidden">
-          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-            <h2 className="text-lg font-bold text-foreground">
-              Featured Products
-            </h2>
-            <Link
-              href="/products?featured=true"
-              className="text-accent text-sm font-medium hover:underline flex items-center gap-1"
-            >
-              See All <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
-          <div className="p-4">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {featuredLoading
-                ? [...Array(5)].map((_, i) => <ProductCardSkeleton key={i} />)
-                : featuredProducts
-                    .slice(0, 5)
-                    .map((product) => (
-                      <ProductCardCompact key={product.id} product={product} />
-                    ))}
-            </div>
-          </div>
-        </section>
+        {/* Office Furniture Slider */}
+        <ProductSlider
+          title="Office Furniture"
+          products={officeProducts.length > 0 ? officeProducts : products}
+          isLoading={productsLoading}
+          viewAllLink="/categories/office"
+        />
+
+        {/* Sale Products Slider */}
+        {saleProducts.length > 0 && (
+          <ProductSlider
+            title="Special Offers"
+            products={saleProducts}
+            isLoading={productsLoading}
+            viewAllLink="/products?sale=true"
+            accentColor="primary"
+          />
+        )}
+
+        {/* Featured Products Slider */}
+        <ProductSlider
+          title="Featured Products"
+          products={featuredProducts}
+          isLoading={featuredLoading}
+          viewAllLink="/products?featured=true"
+        />
 
         {/* Shop All Products CTA */}
         <div className="text-center mb-6">
@@ -826,52 +839,6 @@ export default function HomePage() {
             </Button>
           </Link>
         </div>
-
-        {/* Shop by Room Banner */}
-        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          {[
-            {
-              name: "Living Room",
-              image: "/images/products/sofa-1.jpg",
-              slug: "living-room",
-            },
-            {
-              name: "Bedroom",
-              image: "/images/products/bed-1.jpg",
-              slug: "bedroom",
-            },
-            {
-              name: "Dining Room",
-              image: "/images/products/dining-1.jpg",
-              slug: "dining",
-            },
-            {
-              name: "Home Office",
-              image: "/images/products/chair-1.jpg",
-              slug: "office",
-            },
-          ].map((room) => (
-            <Link
-              key={room.name}
-              href={`/categories/${room.slug}`}
-              className="relative h-48 rounded-lg overflow-hidden group"
-            >
-              <Image
-                src={room.image}
-                alt={room.name}
-                fill
-                className="object-cover group-hover:scale-105 transition-transform duration-300"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-              <div className="absolute bottom-0 left-0 right-0 p-4">
-                <h3 className="text-white font-bold text-lg">{room.name}</h3>
-                <span className="text-white/80 text-sm flex items-center gap-1 group-hover:text-accent transition-colors">
-                  Shop Now <ArrowRight className="h-4 w-4" />
-                </span>
-              </div>
-            </Link>
-          ))}
-        </section>
       </div>
     </div>
   );
