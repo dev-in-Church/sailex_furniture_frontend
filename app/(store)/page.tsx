@@ -299,7 +299,7 @@ const banners = [
   },
   {
     id: 2,
-    image: "/images/banners/banner.png",
+    image: "/images/banners/banner2.png",
     title: "New Arrivals",
     subtitle: "2024 Collection",
     description: "Discover the latest bedroom furniture",
@@ -308,7 +308,7 @@ const banners = [
   },
   {
     id: 3,
-    image: "/images/banners/banner.png",
+    image: "/images/banners/banner3.png",
     title: "Free Delivery",
     subtitle: "On Orders Above KES 50,000",
     description: "Shop now and save on shipping",
@@ -795,20 +795,33 @@ export default function HomePage() {
   );
 
   // Fetch categories from API
-  const { data: categoriesData, isLoading: categoriesLoading } = useSWR(
-    `${API_BASE}/categories`,
-    fetcher,
-    {
-      fallbackData: { categories: mockCategories },
-      revalidateOnFocus: false,
-    },
-  );
+  // const { data: categoriesData, isLoading: categoriesLoading } = useSWR(
+  //   `${API_BASE}/categories`,
+  //   fetcher,
+  //   {
+  //     fallbackData: { categories: mockCategories },
+  //     revalidateOnFocus: false,
+  //   },
+  // );
+
+  //replaced SWR
+  const categoriesData = {
+    categories: mockCategories,
+  };
+
+  // const categoriesLoading = false;
 
   const products: Product[] = productsData?.products || mockProducts;
   const featuredProducts: Product[] =
     featuredData?.products || mockProducts.filter((p) => p.featured);
-  const categories: Category[] =
-    categoriesData?.categories || categoriesData?.all || mockCategories;
+
+  //disable
+  // const categories: Category[] =
+  //   categoriesData?.categories || categoriesData?.all || mockCategories;
+
+  //replace
+  const categories: Category[] = mockCategories;
+  const categoriesLoading = false;
 
   // Filter products for different sections
   const bestSellerProducts = products.slice(0, 10);
@@ -849,7 +862,7 @@ export default function HomePage() {
           {/* Categories Sidebar - Desktop */}
           <div className="hidden lg:flex w-56 shrink-0">
             <div className="bg-card rounded-sm overflow-hidden w-full">
-              <div className="bg-primary text-primary-foreground px-4 py-3 font-semibold">
+              <div className="bg-primary-2 text-primary-foreground px-4 py-3 font-semibold">
                 Categories
               </div>
               <nav className="py-2">
@@ -883,9 +896,9 @@ export default function HomePage() {
           </div>
 
           {/* Side Banner - Desktop */}
-          <div className="hidden lg:flex w-60 border overflow-hidden border-primary rounded-sm">
+          <div className="hidden lg:flex w-60  overflow-hidden rounded-sm">
             <Image
-              src="/placeholder.png"
+              src="/images/banners/side.png"
               alt="Sailex Furnitures"
               width={100}
               height={50}

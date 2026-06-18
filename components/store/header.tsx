@@ -130,17 +130,17 @@ export function Header() {
               onSubmit={handleSearch}
               className="flex-1 max-w-2xl hidden md:flex"
             >
-              <div className="flex w-full gap-4">
+              <div className="flex w-full items-center bg-[#f1f1f2] rounded-full pl-4 pr-1 py-1 border border-gray-200">
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search for furniture, sofas, beds..."
-                  className="flex-1 px-4 py-2 bg-white text-foreground placeholder:text-muted-foreground rounded-sm border focus:outline-none focus:ring-2 focus:ring-accent"
+                  className="flex-1 bg-transparent text-gray-800 placeholder:text-gray-500 text-sm focus:outline-none py-1.5"
                 />
                 <Button
                   type="submit"
-                  className="rounded-sm bg-accent hover:bg-accent/90 px-6 h-full"
+                  className="rounded-full bg-[#f68b1e] hover:bg-[#e07b1a] text-white px-8 h-9 font-semibold text-sm shadow-sm transition-colors border-none"
                 >
                   <Search className="h-5 w-5" />
                   <span className="">Search</span>
@@ -246,20 +246,19 @@ export function Header() {
               </Link>
             </div>
           </div>
-
           {/* Mobile Search */}
           <form onSubmit={handleSearch} className="md:hidden pb-3">
-            <div className="flex w-full gap-2">
+            <div className="flex w-full items-center bg-[#f1f1f2] rounded-full pl-4 pr-1 py-1 border border-gray-200">
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search furniture..."
-                className="flex-1 px-4 py-2 bg-white text-foreground placeholder:text-muted-foreground rounded-sm border focus:outline-none"
+                className="flex-1 bg-transparent text-gray-800 placeholder:text-gray-500 text-sm focus:outline-none py-1.5"
               />
               <Button
                 type="submit"
-                className="rounded-sm bg-accent hover:bg-accent/90 px-5 h-full"
+                className="rounded-full bg-[#f68b1e] hover:bg-[#e07b1a] text-white px-5 h-9 font-semibold text-sm transition-colors border-none"
               >
                 <Search className="h-5 w-5" />
                 <span className="">Search</span>

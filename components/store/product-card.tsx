@@ -107,7 +107,7 @@ export function ProductCard({ product }: ProductCardProps) {
               {product.category_name}
             </p>
           )}
-          <h3 className="font-medium text-foreground group-hover:text-accent transition-colors line-clamp-1">
+          <h3 className="font-medium text-foreground truncate group-hover:text-accent transition-colors line-clamp-1">
             {product.name}
           </h3>
           <div className="mt-2 flex items-center gap-2">
