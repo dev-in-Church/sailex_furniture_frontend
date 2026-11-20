@@ -1,323 +1,56 @@
-"use client";
-
 import Link from "next/link";
 import Image from "next/image";
-import { useState, useEffect, useRef } from "react";
-import useSWR from "swr";
+import type { ElementType } from "react";
 import {
-  ChevronRight,
-  ChevronLeft,
-  Truck,
-  Shield,
-  Headphones,
-  Star,
   ArrowRight,
-  Sofa,
+  Armchair,
   BedDouble,
-  UtensilsCrossed,
   Briefcase,
-  Lamp,
   DoorOpen,
-  Loader2,
+  Lamp,
+  Shield,
+  Sofa,
+  Truck,
+  UtensilsCrossed,
   Wallet,
-  ThumbsUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { type Product, type Category } from "@/lib/api";
+import type { Category, Product } from "@/lib/api";
+import { HeroSlider, type Banner } from "@/components/home/hero-slider";
+import { ProductSlider } from "@/components/home/product-slider";
+
+// Rendered on the server and cached for a minute, so visitors never wait on
+// the API/database round trip and search engines see real content.
+export const revalidate = 60;
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL;
+const FETCH_TIMEOUT_MS = 15_000;
+const SLIDER_SIZE = 10;
+const MAX_CATEGORY_TILES = 6;
+const MAX_CATEGORY_SECTIONS = 3;
 
-// Fetcher for SWR
-const fetcher = async (url: string) => {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("Failed to fetch");
-  return res.json();
-};
-
-// Mock data for fallback when backend is not available
-const mockProducts: Product[] = [
-  {
-    id: "1",
-    name: "Milano Leather Sofa",
-    slug: "milano-leather-sofa",
-    description: "Luxurious Italian-inspired leather sofa",
-    price: "89999",
-    compare_at_price: "129999",
-    sku: "SOF-MIL-001",
-    stock_quantity: 15,
-    category_id: "1",
-    category_name: "Living Room",
-    category_slug: "living-room",
-    images: ["/images/products/sofa-1.jpg"],
-    specifications: {},
-    featured: true,
-    status: "active",
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "2",
-    name: "Nordic Oak Coffee Table",
-    slug: "nordic-oak-coffee-table",
-    description: "Minimalist Scandinavian-style coffee table",
-    price: "24999",
-    compare_at_price: "34999",
-    sku: "TBL-NRD-001",
-    stock_quantity: 25,
-    category_id: "1",
-    category_name: "Living Room",
-    category_slug: "living-room",
-    images: ["/images/products/dining-1.jpg"],
-    specifications: {},
-    featured: true,
-    status: "active",
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "3",
-    name: "Cloud Comfort Bed Frame",
-    slug: "cloud-comfort-bed-frame",
-    description: "Modern upholstered bed frame",
-    price: "67999",
-    compare_at_price: "89999",
-    sku: "BED-CLD-001",
-    stock_quantity: 10,
-    category_id: "2",
-    category_name: "Bedroom",
-    category_slug: "bedroom",
-    images: ["/images/products/bed-1.jpg"],
-    specifications: {},
-    featured: true,
-    status: "active",
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "4",
-    name: "Executive Office Chair",
-    slug: "executive-office-chair",
-    description: "Premium ergonomic office chair",
-    price: "34999",
-    compare_at_price: "49999",
-    sku: "CHR-EXC-001",
-    stock_quantity: 30,
-    category_id: "4",
-    category_name: "Office",
-    category_slug: "office",
-    images: ["/images/products/chair-1.jpg"],
-    specifications: {},
-    featured: true,
-    status: "active",
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "5",
-    name: "Velvet Accent Chair",
-    slug: "velvet-accent-chair",
-    description: "Elegant velvet accent chair",
-    price: "29999",
-    compare_at_price: "39999",
-    sku: "CHR-VLV-001",
-    stock_quantity: 20,
-    category_id: "1",
-    category_name: "Living Room",
-    category_slug: "living-room",
-    images: ["/images/products/sofa-1.jpg"],
-    specifications: {},
-    featured: false,
-    status: "active",
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "6",
-    name: "Wooden Dining Set",
-    slug: "wooden-dining-set",
-    description: "6-seater dining table with chairs",
-    price: "119999",
-    compare_at_price: "159999",
-    sku: "DIN-WD-001",
-    stock_quantity: 8,
-    category_id: "3",
-    category_name: "Dining",
-    category_slug: "dining",
-    images: ["/images/products/dining-1.jpg"],
-    specifications: {},
-    featured: true,
-    status: "active",
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "7",
-    name: "King Size Memory Foam Mattress",
-    slug: "king-memory-foam-mattress",
-    description: "Premium memory foam mattress",
-    price: "54999",
-    compare_at_price: "74999",
-    sku: "MAT-KNG-001",
-    stock_quantity: 12,
-    category_id: "2",
-    category_name: "Bedroom",
-    category_slug: "bedroom",
-    images: ["/images/products/bed-1.jpg"],
-    specifications: {},
-    featured: false,
-    status: "active",
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "8",
-    name: "Modern TV Stand",
-    slug: "modern-tv-stand",
-    description: "Contemporary TV stand with storage",
-    price: "32999",
-    compare_at_price: "44999",
-    sku: "TVS-MOD-001",
-    stock_quantity: 18,
-    category_id: "1",
-    category_name: "Living Room",
-    category_slug: "living-room",
-    images: ["/images/products/sofa-1.jpg"],
-    specifications: {},
-    featured: false,
-    status: "active",
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "9",
-    name: "Minimalist Bookshelf",
-    slug: "minimalist-bookshelf",
-    description: "Modern 5-tier bookshelf",
-    price: "18999",
-    compare_at_price: null,
-    sku: "BKS-MIN-001",
-    stock_quantity: 14,
-    category_id: "6",
-    category_name: "Storage",
-    category_slug: "storage",
-    images: ["/images/products/sofa-1.jpg"],
-    specifications: {},
-    featured: false,
-    status: "active",
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "10",
-    name: "Patio Lounge Set",
-    slug: "patio-lounge-set",
-    description: "Weather-resistant outdoor furniture set",
-    price: "45999",
-    compare_at_price: "59999",
-    sku: "OUT-PAT-001",
-    stock_quantity: 6,
-    category_id: "5",
-    category_name: "Outdoor",
-    category_slug: "outdoor",
-    images: ["/images/hero-living-room.jpg"],
-    specifications: {},
-    featured: false,
-    status: "active",
-    created_at: new Date().toISOString(),
-  },
-];
-
-const mockCategories: Category[] = [
-  {
-    id: "1",
-    name: "Living Room",
-    slug: "living-room",
-    description: null,
-    image_url: "/images/products/sofa-1.jpg",
-    parent_id: null,
-    parent_name: null,
-    sort_order: 1,
-    product_count: 45,
-  },
-  {
-    id: "2",
-    name: "Bedroom",
-    slug: "bedroom",
-    description: null,
-    image_url: "/images/products/bed-1.jpg",
-    parent_id: null,
-    parent_name: null,
-    sort_order: 2,
-    product_count: 38,
-  },
-  {
-    id: "3",
-    name: "Dining",
-    slug: "dining",
-    description: null,
-    image_url: "/images/products/dining-1.jpg",
-    parent_id: null,
-    parent_name: null,
-    sort_order: 3,
-    product_count: 24,
-  },
-  {
-    id: "4",
-    name: "Office",
-    slug: "office",
-    description: null,
-    image_url: "/images/products/chair-1.jpg",
-    parent_id: null,
-    parent_name: null,
-    sort_order: 4,
-    product_count: 32,
-  },
-  {
-    id: "5",
-    name: "Outdoor",
-    slug: "outdoor",
-    description: null,
-    image_url: "/images/hero-living-room.jpg",
-    parent_id: null,
-    parent_name: null,
-    sort_order: 5,
-    product_count: 18,
-  },
-  {
-    id: "6",
-    name: "Storage",
-    slug: "storage",
-    description: null,
-    image_url: "/images/hero-living-room.jpg",
-    parent_id: null,
-    parent_name: null,
-    sort_order: 6,
-    product_count: 22,
-  },
-];
-
-const banners = [
+const banners: Banner[] = [
   {
     id: 1,
-    image: "/images/banners/banner.png",
-    title: "Premium Furniture",
-    subtitle: "Up to 50% Off",
-    description: "Luxury sofas and living room furniture",
-    link: "/products?sale=true",
-    color: "from-amber-900/90",
+    image: "/images/banners/1.png",
+    alt: "Premium furniture, up to 50% off",
+    href: "/products?category=living-room",
   },
   {
     id: 2,
-    image: "/images/banners/banner2.png",
-    title: "New Arrivals",
-    subtitle: "2024 Collection",
-    description: "Discover the latest bedroom furniture",
-    link: "/categories/bedroom",
-    color: "from-stone-900/90",
+    image: "/images/banners/2.png",
+    alt: "New arrivals: the latest bedroom furniture",
+    href: "/products?category=bedroom",
   },
   {
     id: 3,
-    image: "/images/banners/banner3.png",
-    title: "Free Delivery",
-    subtitle: "On Orders Above KES 50,000",
-    description: "Shop now and save on shipping",
-    link: "/products",
-    color: "from-primary/90",
+    image: "/images/banners/3.png",
+    alt: "Free delivery on orders above KES 50,000",
+    href: "/products?category=dining",
   },
 ];
 
-const categoryIcons: Record<string, React.ElementType> = {
+const categoryIcons: Record<string, ElementType> = {
   "living-room": Sofa,
   bedroom: BedDouble,
   dining: UtensilsCrossed,
@@ -326,684 +59,263 @@ const categoryIcons: Record<string, React.ElementType> = {
   storage: Lamp,
 };
 
-// Product Slider Component
-// Product Slider Component
-function ProductSlider({
-  title,
-  products,
-  isLoading,
-  viewAllLink,
-  accentColor = "accent",
-}: {
-  title: string;
-  products: Product[];
-  isLoading: boolean;
-  viewAllLink: string;
-  accentColor?: string;
-}) {
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [showLeftArrow, setShowLeftArrow] = useState(false);
-  const [showRightArrow, setShowRightArrow] = useState(true);
-  const [cardsPerView, setCardsPerView] = useState(5);
-  const [isDragging, setIsDragging] = useState(false);
-  const [startX, setStartX] = useState(0);
-  const [scrollLeft, setScrollLeft] = useState(0);
+// Colored rings around the category circles
+const RING_COLORS = [
+  "border-orange-400",
+  "border-violet-400",
+  "border-sky-500",
+  "border-amber-400",
+  "border-emerald-500",
+  "border-rose-400",
+];
 
-  useEffect(() => {
-    const updateCardsPerView = () => {
-      const width = window.innerWidth;
-      if (width < 640) {
-        setCardsPerView(2); // Change this from 3 to 2
-      } else if (width < 768) {
-        setCardsPerView(2);
-      } else if (width < 1024) {
-        setCardsPerView(3);
-      } else if (width < 1280) {
-        setCardsPerView(4);
-      } else {
-        setCardsPerView(5);
-      }
-    };
+const trustPoints = [
+  { icon: Truck, title: "Free delivery", text: "On orders above KES 50,000" },
+  { icon: Wallet, title: "Pay with M-Pesa", text: "Quick, familiar checkout" },
+  {
+    icon: Shield,
+    title: "Secure checkout",
+    text: "Your details stay protected",
+  },
+];
 
-    updateCardsPerView();
-    window.addEventListener("resize", updateCardsPerView);
-    return () => window.removeEventListener("resize", updateCardsPerView);
-  }, []);
+export const metadata = {
+  description:
+    "Shop sofas, beds, dining sets and office furniture from Sailex Furniture.",
+};
 
-  const checkScroll = () => {
-    const container = scrollContainerRef.current;
-    if (container) {
-      setShowLeftArrow(container.scrollLeft > 20);
-      setShowRightArrow(
-        container.scrollLeft + container.clientWidth <
-          container.scrollWidth - 20,
-      );
+/* ----------------------------- data helpers ----------------------------- */
+
+async function getJson<T>(path: string): Promise<T | null> {
+  if (!API_BASE) {
+    console.error("NEXT_PUBLIC_API_URL is not set");
+    return null;
+  }
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      next: { revalidate: 60 },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      console.error(`GET ${path} failed with ${res.status}`);
+      return null;
     }
-  };
-
-  const scroll = (direction: "left" | "right") => {
-    const container = scrollContainerRef.current;
-    if (container) {
-      const cardWidth = container.children[0]?.clientWidth || 0;
-      const scrollAmount = cardWidth * cardsPerView;
-      container.scrollBy({
-        left: direction === "left" ? -scrollAmount : scrollAmount,
-        behavior: "smooth",
-      });
-    }
-  };
-
-  // Drag to scroll handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsDragging(true);
-    setStartX(e.pageX - (scrollContainerRef.current?.offsetLeft || 0));
-    setScrollLeft(scrollContainerRef.current?.scrollLeft || 0);
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging) return;
-    e.preventDefault();
-    const x = e.pageX - (scrollContainerRef.current?.offsetLeft || 0);
-    const walk = (x - startX) * 1.5;
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollLeft = scrollLeft - walk;
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    setIsDragging(true);
-    setStartX(
-      e.touches[0].pageX - (scrollContainerRef.current?.offsetLeft || 0),
-    );
-    setScrollLeft(scrollContainerRef.current?.scrollLeft || 0);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isDragging) return;
-    const x =
-      e.touches[0].pageX - (scrollContainerRef.current?.offsetLeft || 0);
-    const walk = (x - startX) * 1.5;
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollLeft = scrollLeft - walk;
-    }
-  };
-
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (container) {
-      container.addEventListener("scroll", checkScroll);
-      checkScroll();
-      return () => container.removeEventListener("scroll", checkScroll);
-    }
-  }, [products]);
-
-  // Calculate card width based on cards per view
-  const getCardWidthClass = () => {
-    if (cardsPerView === 2) {
-      return "w-[calc(50%-8px)] min-w-[140px]"; // 2 cards on mobile
-    }
-    if (cardsPerView === 3) {
-      return "w-[calc(33.333%-10.666px)] min-w-[130px]";
-    }
-    if (cardsPerView === 4) {
-      return "w-[calc(25%-12px)] min-w-[170px]";
-    }
-    return "w-[calc(20%-12.8px)] min-w-[200px]";
-  };
-
-  return (
-    <section className="bg-card rounded-lg border border-border mb-6 overflow-hidden">
-      <div
-        className={`px-4 py-3 border-b border-border flex flex-wrap items-center justify-between gap-3 ${
-          accentColor === "primary" ? "bg-primary/5" : ""
-        }`}
-      >
-        <h2 className="text-lg font-bold text-foreground">{title}</h2>
-        <Link
-          href={viewAllLink}
-          className="text-accent text-sm font-medium hover:underline flex items-center gap-1"
-        >
-          See All <ArrowRight className="h-4 w-4" />
-        </Link>
-      </div>
-      <div className="relative group">
-        {/* Left Arrow */}
-        {showLeftArrow && !isDragging && (
-          <button
-            onClick={() => scroll("left")}
-            className="absolute left-2 top-1/2 -translate-y-1/2 z-10 p-2 bg-white/90 hover:bg-white rounded-full shadow-lg border border-border transition-all hidden sm:flex items-center justify-center"
-            aria-label="Previous"
-          >
-            <ChevronLeft className="h-5 w-5 text-foreground" />
-          </button>
-        )}
-
-        {/* Slider Container */}
-        <div
-          ref={scrollContainerRef}
-          className={`flex overflow-x-auto gap-3 sm:gap-4 p-4 snap-mandatory ${
-            isDragging ? "cursor-grabbing select-none" : "cursor-grab"
-          }`}
-          style={{
-            scrollbarWidth: "none",
-            msOverflowStyle: "none",
-            WebkitOverflowScrolling: "touch",
-          }}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleMouseUp}
-        >
-          <style jsx>{`
-            div::-webkit-scrollbar {
-              display: none;
-            }
-          `}</style>
-
-          {isLoading
-            ? [...Array(cardsPerView)].map((_, i) => (
-                <div
-                  key={i}
-                  className={`flex-none ${getCardWidthClass()} snap-start`}
-                >
-                  <ProductCardCompactSkeleton />
-                </div>
-              ))
-            : products.map((product) => (
-                <div
-                  key={product.id}
-                  className={`flex-none ${getCardWidthClass()} snap-start`}
-                >
-                  <ProductCardCompact
-                    product={product}
-                    isMobile={cardsPerView === 3}
-                  />
-                </div>
-              ))}
-        </div>
-
-        {/* Right Arrow */}
-        {showRightArrow && !isDragging && products.length > cardsPerView && (
-          <button
-            onClick={() => scroll("right")}
-            className="absolute right-2 top-1/2 -translate-y-1/2 z-10 p-2 bg-white/90 hover:bg-white rounded-full shadow-lg border border-border transition-all hidden sm:flex items-center justify-center"
-            aria-label="Next"
-          >
-            <ChevronRight className="h-5 w-5 text-foreground" />
-          </button>
-        )}
-
-        {/* Scroll Indicators - Mobile */}
-        <div className="flex justify-center gap-1.5 mt-2 pb-2 sm:hidden">
-          {products
-            .slice(0, Math.ceil(products.length / cardsPerView))
-            .map((_, idx) => {
-              const container = scrollContainerRef.current;
-              const isActive = container
-                ? Math.abs(
-                    container.scrollLeft /
-                      (container.scrollWidth - container.clientWidth) -
-                      idx / (Math.ceil(products.length / cardsPerView) - 1),
-                  ) < 0.1
-                : idx === 0;
-              return (
-                <button
-                  key={idx}
-                  onClick={() => {
-                    const container = scrollContainerRef.current;
-                    if (container) {
-                      const cardWidth = container.children[0]?.clientWidth || 0;
-                      container.scrollTo({
-                        left: cardWidth * cardsPerView * idx,
-                        behavior: "smooth",
-                      });
-                    }
-                  }}
-                  className={`h-1.5 rounded-full transition-all ${
-                    isActive ? "w-4 bg-accent" : "w-1.5 bg-muted-foreground/30"
-                  }`}
-                />
-              );
-            })}
-        </div>
-      </div>
-    </section>
-  );
+    return (await res.json()) as T;
+  } catch (err) {
+    console.error(`GET ${path} failed:`, err);
+    return null;
+  }
 }
 
-// Updated Product Card with mobile optimization
-function ProductCardCompact({
-  product,
-  isMobile = false,
-}: {
-  product: Product;
-  isMobile?: boolean;
-}) {
-  const hasDiscount =
-    product.compare_at_price &&
-    parseFloat(product.compare_at_price) > parseFloat(product.price);
-  const discountPercent = hasDiscount
-    ? Math.round(
-        (1 -
-          parseFloat(product.price) / parseFloat(product.compare_at_price!)) *
-          100,
-      )
-    : 0;
+const bySortOrder = (a: Category, b: Category) =>
+  (a.sort_order ?? 0) - (b.sort_order ?? 0);
 
-  const [imgSrc, setImgSrc] = useState(
-    product.images?.[0] || "/placeholder.png",
-  );
+const discountPercent = (p: Product) => {
+  const price = Number(p.price);
+  const compare = Number(p.compare_at_price);
+  return compare > price ? Math.round((1 - price / compare) * 100) : 0;
+};
 
-  return (
-    <Link
-      href={`/products/${product.slug}`}
-      className="group block bg-card rounded-sm border border-border hover:shadow-lg transition-shadow h-full"
-    >
-      <div className="relative aspect-square">
-        <Image
-          src={imgSrc}
-          alt={product.name}
-          fill
-          className="object-cover rounded-t-lg"
-          sizes={
-            isMobile
-              ? "33vw"
-              : "(max-width: 640px) 33vw, (max-width: 768px) 50vw, (max-width: 1024px) 25vw, 20vw"
-          }
-          onError={() => {
-            if (imgSrc !== "/placeholder.png") {
-              setImgSrc("/placeholder.png");
-            }
-          }}
-        />
-        {hasDiscount && (
-          <span
-            className={`absolute top-2 left-2 px-1.5 py-0.5 bg-accent text-accent-foreground font-bold rounded ${
-              isMobile ? "text-[10px]" : "text-xs"
-            }`}
-          >
-            -{discountPercent}%
-          </span>
-        )}
-      </div>
-      <div className="p-2 sm:p-3">
-        <h3
-          className={`font-medium text-foreground truncate line-clamp-2 group-hover:text-accent transition-colors ${
-            isMobile ? "text-xs" : "text-sm"
-          }`}
-        >
-          {product.name}
-        </h3>
-        <div className="mt-1 flex flex-col sm:mt-2">
-          <span
-            className={`font-bold text-primary ${
-              isMobile ? "text-xs" : "text-base"
-            }`}
-          >
-            KES {parseInt(product.price).toLocaleString()}
-          </span>
-          {hasDiscount && (
-            <span
-              className={`ml-1 text-muted-foreground line-through ${
-                isMobile ? "text-[9px]" : "text-xs"
-              }`}
-            >
-              KES {parseInt(product.compare_at_price!).toLocaleString()}
-            </span>
-          )}
-        </div>
-        {!isMobile && (
-          <div className="flex items-center gap-1 mt-1">
-            <div className="flex">
-              {[...Array(5)].map((_, i) => (
-                <Star
-                  key={i}
-                  className={`h-3 w-3 ${i < 4 ? "fill-amber-400 text-amber-400" : "text-muted"}`}
-                />
-              ))}
-            </div>
-            <span className="text-xs text-muted-foreground">(24)</span>
-          </div>
-        )}
-      </div>
-    </Link>
-  );
-}
+/** Groups products under their top-level category (children roll up to the parent). */
+function buildCategorySections(categories: Category[], products: Product[]) {
+  const byId = new Map(categories.map((c) => [c.id, c]));
 
-// Skeleton for compact product card
-function ProductCardCompactSkeleton() {
-  return (
-    <div className="bg-card rounded-lg border border-border animate-pulse h-full">
-      <div className="aspect-square bg-muted rounded-t-lg" />
-      <div className="p-2 sm:p-3 space-y-1.5 sm:space-y-2">
-        <div className="h-3 sm:h-4 bg-muted rounded w-3/4" />
-        <div className="h-3 sm:h-4 bg-muted rounded w-1/2" />
-        <div className="h-2 sm:h-3 bg-muted rounded w-1/3" />
-      </div>
-    </div>
-  );
-}
-
-function HeroSlider() {
-  const [currentSlide, setCurrentSlide] = useState(0);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentSlide((prev) => (prev + 1) % banners.length);
-    }, 5000);
-    return () => clearInterval(timer);
-  }, []);
-
-  return (
-    <div className="relative h-[200px] md:h-[350px] aspect-auto rounded-sm overflow-hidden">
-      {banners.map((banner, index) => (
-        <Link
-          key={banner.id}
-          href={banner.link}
-          className={`absolute inset-0 transition-opacity duration-500 ${
-            index === currentSlide
-              ? "opacity-100"
-              : "opacity-0 pointer-events-none"
-          }`}
-        >
-          <Image
-            src={banner.image}
-            alt={banner.title}
-            fill
-            className="object-cover]"
-            priority={index === 0}
-          />
-        </Link>
-      ))}
-
-      {/* Navigation Dots */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
-        {banners.map((_, index) => (
-          <button
-            key={index}
-            onClick={() => setCurrentSlide(index)}
-            className={`w-2 h-2 rounded-full transition-colors ${
-              index === currentSlide ? "bg-white" : "bg-white/50"
-            }`}
-          />
-        ))}
-      </div>
-
-      {/* Navigation Arrows */}
-      <button
-        onClick={() =>
-          setCurrentSlide(
-            (prev) => (prev - 1 + banners.length) % banners.length,
-          )
-        }
-        className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/30 hover:bg-black/50 rounded-full text-white transition-colors"
-      >
-        <ChevronLeft className="h-5 w-5" />
-      </button>
-      <button
-        onClick={() => setCurrentSlide((prev) => (prev + 1) % banners.length)}
-        className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/30 hover:bg-black/50 rounded-full text-white transition-colors"
-      >
-        <ChevronRight className="h-5 w-5" />
-      </button>
-    </div>
-  );
-}
-
-function ProductCardSkeleton() {
-  return (
-    <div className="bg-card rounded-lg border border-border animate-pulse h-full">
-      <div className="aspect-square bg-muted rounded-t-lg" />
-      <div className="p-3 space-y-2">
-        <div className="h-4 bg-muted rounded w-3/4" />
-        <div className="h-4 bg-muted rounded w-1/2" />
-        <div className="h-3 bg-muted rounded w-1/3" />
-      </div>
-    </div>
-  );
-}
-
-export default function HomePage() {
-  // Fetch products from API
-  const { data: productsData, isLoading: productsLoading } = useSWR(
-    `${API_BASE}/products?limit=20`,
-    fetcher,
-    {
-      fallbackData: { products: mockProducts },
-      revalidateOnFocus: false,
-      onError: () => {
-        // Silently fall back to mock data on error
-      },
-    },
-  );
-
-  // Fetch featured products
-  const { data: featuredData, isLoading: featuredLoading } = useSWR(
-    `${API_BASE}/products/featured`,
-    fetcher,
-    {
-      fallbackData: { products: mockProducts.filter((p) => p.featured) },
-      revalidateOnFocus: false,
-    },
-  );
-
-  // Fetch categories from API
-  // const { data: categoriesData, isLoading: categoriesLoading } = useSWR(
-  //   `${API_BASE}/categories`,
-  //   fetcher,
-  //   {
-  //     fallbackData: { categories: mockCategories },
-  //     revalidateOnFocus: false,
-  //   },
-  // );
-
-  //replaced SWR
-  const categoriesData = {
-    categories: mockCategories,
+  const rootIdOf = (category: Category) => {
+    let current = category;
+    const seen = new Set<string>();
+    while (current.parent_id && !seen.has(current.id)) {
+      seen.add(current.id);
+      const parent = byId.get(current.parent_id);
+      if (!parent) break;
+      current = parent;
+    }
+    return current.id;
   };
 
-  // const categoriesLoading = false;
+  const grouped = new Map<string, Product[]>();
+  for (const product of products) {
+    const category = product.category_id
+      ? byId.get(product.category_id)
+      : undefined;
+    if (!category) continue;
+    const rootId = rootIdOf(category);
+    const list = grouped.get(rootId) ?? [];
+    list.push(product);
+    grouped.set(rootId, list);
+  }
 
-  const products: Product[] = productsData?.products || mockProducts;
-  const featuredProducts: Product[] =
-    featuredData?.products || mockProducts.filter((p) => p.featured);
+  return categories
+    .filter((c) => !c.parent_id)
+    .sort(bySortOrder)
+    .map((category) => ({
+      category,
+      products: (grouped.get(category.id) ?? []).slice(0, SLIDER_SIZE),
+    }))
+    .filter((section) => section.products.length > 0)
+    .slice(0, MAX_CATEGORY_SECTIONS);
+}
 
-  //disable
-  // const categories: Category[] =
-  //   categoriesData?.categories || categoriesData?.all || mockCategories;
+/* --------------------------------- page --------------------------------- */
 
-  //replace
-  const categories: Category[] = mockCategories;
-  const categoriesLoading = false;
+export default async function HomePage() {
+  const [productsData, featuredData, categoriesData] = await Promise.all([
+    getJson<{ products?: Product[] }>("/products?limit=40"),
+    getJson<{ products?: Product[] }>(
+      `/products/featured?limit=${SLIDER_SIZE}`,
+    ),
+    getJson<{ categories?: Category[]; all?: Category[] }>("/categories"),
+  ]);
 
-  // Filter products for different sections
-  const bestSellerProducts = products.slice(0, 10);
-  const newArrivalsProducts = [...products].reverse().slice(0, 10);
-  const saleProducts = products.filter(
-    (p) =>
-      p.compare_at_price &&
-      parseFloat(p.compare_at_price) > parseFloat(p.price),
+  const products = productsData?.products ?? [];
+  const featured = (featuredData?.products ?? []).slice(0, SLIDER_SIZE);
+  const categories = categoriesData?.all ?? categoriesData?.categories ?? [];
+
+  const topCategories = categories
+    .filter((c) => !c.parent_id)
+    .sort(bySortOrder);
+  const categoryTiles = topCategories.slice(0, MAX_CATEGORY_TILES);
+
+  const newArrivals = [...products]
+    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+    .slice(0, SLIDER_SIZE);
+
+  const hotDeals = products
+    .filter((p) => discountPercent(p) > 0)
+    .sort((a, b) => discountPercent(b) - discountPercent(a))
+    .slice(0, SLIDER_SIZE);
+  const biggestDiscount = hotDeals.reduce(
+    (max, p) => Math.max(max, discountPercent(p)),
+    0,
   );
 
-  // Group products by category for category sections
-  const livingRoomProducts = products.filter(
-    (p) =>
-      p.category_slug === "living-room" ||
-      p.category_name?.toLowerCase().includes("living"),
-  );
-  const bedroomProducts = products.filter(
-    (p) =>
-      p.category_slug === "bedroom" ||
-      p.category_name?.toLowerCase().includes("bedroom"),
-  );
-  const diningProducts = products.filter(
-    (p) =>
-      p.category_slug === "dining" ||
-      p.category_name?.toLowerCase().includes("dining"),
-  );
-  const officeProducts = products.filter(
-    (p) =>
-      p.category_slug === "office" ||
-      p.category_name?.toLowerCase().includes("office"),
-  );
+  const categorySections = buildCategorySections(categories, products);
+
+  const hasNothingToShow = products.length === 0 && featured.length === 0;
 
   return (
     <div className="min-h-screen bg-secondary/30">
-      <div className="mx-auto max-w-7xl px-2 py-4">
-        {/* Main Hero Section with Categories */}
-        <div className="flex gap-4 mb-6">
-          {/* Categories Sidebar - Desktop */}
-          <div className="hidden lg:flex w-56 shrink-0">
-            <div className="bg-card rounded-sm overflow-hidden w-full">
-              <div className="bg-primary-2 text-primary-foreground px-4 py-3 font-semibold">
-                Categories
-              </div>
-              <nav className="py-2">
-                {categoriesLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                  </div>
-                ) : (
-                  categories.map((category) => {
-                    const Icon = categoryIcons[category.slug] || Sofa;
-                    return (
-                      <Link
-                        key={category.id}
-                        href={`/categories/${category.slug}`}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-secondary hover:text-accent transition-colors"
-                      >
-                        <Icon className="h-4 w-4 text-muted-foreground" />
-                        <span>{category.name}</span>
-                        <ChevronRight className="h-4 w-4 ml-auto text-muted-foreground" />
-                      </Link>
-                    );
-                  })
-                )}
-              </nav>
-            </div>
+      <div className="mx-auto max-w-7xl px-3 py-4 sm:px-4">
+        <HeroSlider banners={banners} />
+
+        {hasNothingToShow && (
+          <div className="mb-6 rounded-2xl border border-border bg-card px-6 py-12 text-center">
+            <h2 className="text-lg font-bold text-foreground">
+              Our catalogue is being updated
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              We couldn&apos;t load products right now. Please try again in a
+              moment.
+            </p>
+            <Link href="/products" className="mt-4 inline-block">
+              <Button variant="outline">Browse all products</Button>
+            </Link>
           </div>
-
-          {/* Hero Slider */}
-          <div className="flex-1">
-            <HeroSlider />
-          </div>
-
-          {/* Side Banner - Desktop */}
-          <div className="hidden lg:flex w-60  overflow-hidden rounded-sm">
-            <Image
-              src="/images/banners/side.png"
-              alt="Sailex Furnitures"
-              width={100}
-              height={50}
-              className="h-full w-auto object-cover object-center"
-            />
-          </div>
-        </div>
-
-        {/* Best Sellers Slider */}
-        <ProductSlider
-          title="Best Sellers"
-          products={bestSellerProducts}
-          isLoading={productsLoading}
-          viewAllLink="/products?sort=popular"
-        />
-
-        {/* New Arrivals Slider */}
-        <ProductSlider
-          title="New Arrivals"
-          products={newArrivalsProducts}
-          isLoading={productsLoading}
-          viewAllLink="/products?sort=newest"
-        />
-
-        {/* Categories Grid - Mobile */}
-        <section className="lg:hidden mb-6">
-          <h2 className="text-lg font-bold text-foreground mb-4">
-            Shop by Category
-          </h2>
-          <div className="grid grid-cols-3 gap-3">
-            {categories.slice(0, 6).map((category) => {
-              const Icon = categoryIcons[category.slug] || Sofa;
-              return (
-                <Link
-                  key={category.id}
-                  href={`/categories/${category.slug}`}
-                  className="flex flex-col items-center gap-2 p-4 bg-card rounded-lg border border-border hover:border-accent transition-colors"
-                >
-                  <div className="p-3 bg-accent/10 rounded-full">
-                    <Icon className="h-6 w-6 text-accent" />
-                  </div>
-                  <span className="text-xs font-medium text-foreground text-center">
-                    {category.name}
-                  </span>
-                </Link>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* Living Room Furniture Slider */}
-        <ProductSlider
-          title="Living Room Furniture"
-          products={
-            livingRoomProducts.length > 0 ? livingRoomProducts : products
-          }
-          isLoading={productsLoading}
-          viewAllLink="/categories/living-room"
-        />
-
-        {/* Bedroom Furniture Slider */}
-        <ProductSlider
-          title="Bedroom Furniture"
-          products={bedroomProducts.length > 0 ? bedroomProducts : products}
-          isLoading={productsLoading}
-          viewAllLink="/categories/bedroom"
-        />
-
-        {/* Dining Room Furniture Slider */}
-        <ProductSlider
-          title="Dining Room Furniture"
-          products={diningProducts.length > 0 ? diningProducts : products}
-          isLoading={productsLoading}
-          viewAllLink="/categories/dining"
-        />
-
-        {/* Office Furniture Slider */}
-        <ProductSlider
-          title="Office Furniture"
-          products={officeProducts.length > 0 ? officeProducts : products}
-          isLoading={productsLoading}
-          viewAllLink="/categories/office"
-        />
-
-        {/* Sale Products Slider */}
-        {saleProducts.length > 0 && (
-          <ProductSlider
-            title="Special Offers"
-            products={saleProducts}
-            isLoading={productsLoading}
-            viewAllLink="/products?sale=true"
-            accentColor="primary"
-          />
         )}
 
-        {/* Featured Products Slider */}
+        {/* Red deals strip, like Jumia's Flash Sales */}
         <ProductSlider
-          title="Featured Products"
-          products={featuredProducts}
-          isLoading={featuredLoading}
-          viewAllLink="/products?featured=true"
+          title="Hot Deals"
+          subtitle={
+            biggestDiscount > 0 ? `Up to ${biggestDiscount}% off` : undefined
+          }
+          products={hotDeals}
+          viewAllHref="/products?sale=true"
+          variant="deals"
         />
 
-        {/* Shop All Products CTA */}
-        <div className="text-center mb-6">
+        {/* Category circles */}
+        {categoryTiles.length > 0 && (
+          <section className="mb-8" aria-labelledby="shop-by-category">
+            <h2
+              id="shop-by-category"
+              className="mb-4 text-xl font-extrabold text-foreground sm:text-2xl"
+            >
+              Shop by Category
+            </h2>
+            <ul className="grid grid-cols-3 gap-x-3 gap-y-6 sm:grid-cols-4 lg:grid-cols-6">
+              {categoryTiles.map((category, index) => {
+                const Icon = categoryIcons[category.slug] ?? Armchair;
+                return (
+                  <li key={category.id}>
+                    <Link
+                      href={`/categories/${category.slug}`}
+                      className="group flex flex-col items-center gap-3 text-center"
+                    >
+                      <span
+                        className={`relative flex aspect-square w-full max-w-[170px] items-center justify-center overflow-hidden rounded-full border-[3px] bg-accent/5 transition-transform group-hover:scale-105 ${
+                          RING_COLORS[index % RING_COLORS.length]
+                        }`}
+                      >
+                        {category.image_url ? (
+                          <Image
+                            src={category.image_url}
+                            alt=""
+                            fill
+                            sizes="(max-width: 640px) 33vw, (max-width: 1024px) 25vw, 170px"
+                            className="object-cover"
+                          />
+                        ) : (
+                          <Icon
+                            className="h-1/3 w-1/3 text-accent"
+                            aria-hidden="true"
+                          />
+                        )}
+                      </span>
+                      <span className="text-sm font-semibold text-foreground sm:text-base">
+                        {category.name}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+
+        <ProductSlider
+          title="Featured"
+          subtitle="Hand-picked for you"
+          products={featured}
+          viewAllHref="/products?featured=true"
+          variant="tinted"
+        />
+
+        <ProductSlider
+          title="New Arrivals"
+          subtitle="Fresh in store"
+          products={newArrivals}
+          viewAllHref="/products?sort=newest"
+        />
+
+        {categorySections.map(({ category, products: items }, index) => (
+          <ProductSlider
+            key={category.id}
+            title={category.name}
+            products={items}
+            viewAllHref={`/categories/${category.slug}`}
+            variant={index % 2 === 0 ? "tinted" : "plain"}
+          />
+        ))}
+
+        {/* Reassurance row */}
+        <ul className="mb-6 grid gap-3 sm:grid-cols-3">
+          {trustPoints.map(({ icon: Icon, title, text }) => (
+            <li
+              key={title}
+              className="flex items-center gap-3 rounded-xl bg-card px-4 py-3 ring-1 ring-border"
+            >
+              <span className="rounded-full bg-accent/10 p-2">
+                <Icon className="h-5 w-5 text-accent" aria-hidden="true" />
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-foreground">{title}</p>
+                <p className="text-xs text-muted-foreground">{text}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+
+        <div className="mb-6 text-center">
           <Link href="/products">
             <Button size="lg" className="gap-2 px-8">
               Shop All Products <ArrowRight className="h-5 w-5" />

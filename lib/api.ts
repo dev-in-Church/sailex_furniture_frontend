@@ -11,17 +11,15 @@ async function fetchAPI<T>(
 ): Promise<T> {
   const { token, sessionId, ...fetchOptions } = options;
 
-  const headers: HeadersInit = {
-    "Content-Type": "application/json",
-    ...options.headers,
-  };
-
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
+  const headers = new Headers(fetchOptions.headers);
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
   }
-
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
   if (sessionId) {
-    headers["x-session-id"] = sessionId;
+    headers.set("x-session-id", sessionId);
   }
 
   const response = await fetch(`${API_URL}${endpoint}`, {
@@ -37,6 +35,14 @@ async function fetchAPI<T>(
   }
 
   return response.json();
+}
+
+// Shared
+export interface Pagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
 }
 
 // Products
@@ -61,12 +67,7 @@ export interface Product {
 
 export interface ProductsResponse {
   products: Product[];
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-  };
+  pagination: Pagination;
 }
 
 export interface SingleProductResponse {
@@ -262,13 +263,23 @@ export const createOrder = (
 
 export const getOrders = (token: string, params?: Record<string, string>) => {
   const query = params ? "?" + new URLSearchParams(params).toString() : "";
-  return fetchAPI<{ orders: Order[]; pagination: any }>(`/orders${query}`, {
-    token,
-  });
+  return fetchAPI<{ orders: Order[]; pagination: Pagination }>(
+    `/orders${query}`,
+    { token },
+  );
 };
 
-export const getOrder = (identifier: string, token?: string) => {
-  return fetchAPI<{ order: Order }>(`/orders/${identifier}`, { token });
+/**
+ * Logged-in owners and admins pass `token`. Guest orders must pass the email
+ * used at checkout, which the server checks against the order.
+ */
+export const getOrder = (
+  identifier: string,
+  token?: string,
+  email?: string,
+) => {
+  const query = email ? `?email=${encodeURIComponent(email)}` : "";
+  return fetchAPI<{ order: Order }>(`/orders/${identifier}${query}`, { token });
 };
 
 // Auth
@@ -309,47 +320,66 @@ export const getMe = (token: string) => {
 };
 
 // Payments
-export const initiateMpesaPayment = (orderId: string, phoneNumber: string) => {
-  return fetchAPI<{
-    success: boolean;
-    checkoutRequestId: string;
-    message: string;
-  }>("/payments/mpesa/stkpush", {
-    method: "POST",
-    body: JSON.stringify({ orderId, phoneNumber }),
-  });
-};
-
-export const checkMpesaStatus = (orderId: string) => {
-  return fetchAPI<{ status: string; transactionId: string | null }>(
-    `/payments/mpesa/status/${orderId}`,
-  );
-};
-
-export const createStripeSession = (orderId: string) => {
-  return fetchAPI<{ sessionId: string; url: string }>(
-    "/payments/stripe/create-session",
+// Payment calls prove ownership of the order: logged-in customers send their
+// token, guests send the email used at checkout.
+export const initiateMpesaPayment = (
+  orderId: string,
+  phoneNumber: string,
+  email?: string,
+  token?: string,
+) => {
+  return fetchAPI<{ success: boolean; message: string }>(
+    "/payments/mpesa/stkpush",
     {
       method: "POST",
-      body: JSON.stringify({ orderId }),
+      body: JSON.stringify({ orderId, phoneNumber, email }),
+      token,
     },
   );
 };
 
-// Admin API
+export const checkMpesaStatus = (
+  orderId: string,
+  email?: string,
+  token?: string,
+) => {
+  const query = email ? `?email=${encodeURIComponent(email)}` : "";
+  return fetchAPI<{
+    status: "pending" | "completed" | "failed";
+    transactionId: string | null;
+    message?: string;
+  }>(`/payments/mpesa/status/${orderId}${query}`, { token });
+};
+
+export const createStripeSession = (
+  orderId: string,
+  email?: string,
+  token?: string,
+) => {
+  return fetchAPI<{ sessionId: string; url: string }>(
+    "/payments/stripe/create-session",
+    {
+      method: "POST",
+      body: JSON.stringify({ orderId, email }),
+      token,
+    },
+  );
+};
+
+// Admin API (ids are UUID strings)
 export const admin = {
   getDashboardStats: (token: string) =>
     fetchAPI<any>("/admin/dashboard", { token }),
 
   getOrders: (token: string, params?: Record<string, string>) => {
     const query = params ? "?" + new URLSearchParams(params).toString() : "";
-    return fetchAPI<{ orders: any[]; pagination: any }>(
+    return fetchAPI<{ orders: any[]; pagination: Pagination }>(
       `/admin/orders${query}`,
       { token },
     );
   },
 
-  updateOrderStatus: (token: string, orderId: number, status: string) =>
+  updateOrderStatus: (token: string, orderId: string, status: string) =>
     fetchAPI<any>(`/admin/orders/${orderId}/status`, {
       method: "PUT",
       body: JSON.stringify({ status }),
@@ -358,7 +388,7 @@ export const admin = {
 
   getCustomers: (token: string, params?: Record<string, string>) => {
     const query = params ? "?" + new URLSearchParams(params).toString() : "";
-    return fetchAPI<{ customers: any[]; pagination: any }>(
+    return fetchAPI<{ customers: any[]; pagination: Pagination }>(
       `/admin/customers${query}`,
       { token },
     );
@@ -371,14 +401,14 @@ export const admin = {
       token,
     }),
 
-  updateProduct: (token: string, id: number, data: any) =>
+  updateProduct: (token: string, id: string, data: any) =>
     fetchAPI<{ product: any }>(`/admin/products/${id}`, {
       method: "PUT",
       body: JSON.stringify(data),
       token,
     }),
 
-  deleteProduct: (token: string, id: number) =>
+  deleteProduct: (token: string, id: string) =>
     fetchAPI<{ message: string }>(`/admin/products/${id}`, {
       method: "DELETE",
       token,
@@ -391,14 +421,14 @@ export const admin = {
       token,
     }),
 
-  updateCategory: (token: string, id: number, data: any) =>
+  updateCategory: (token: string, id: string, data: any) =>
     fetchAPI<{ category: any }>(`/admin/categories/${id}`, {
       method: "PUT",
       body: JSON.stringify(data),
       token,
     }),
 
-  deleteCategory: (token: string, id: number) =>
+  deleteCategory: (token: string, id: string) =>
     fetchAPI<{ message: string }>(`/admin/categories/${id}`, {
       method: "DELETE",
       token,

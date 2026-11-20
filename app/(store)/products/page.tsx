@@ -1,126 +1,241 @@
+import type { Metadata } from "next";
+import Link from "next/link";
 import { Suspense } from "react";
-import { ProductsGrid } from "./products-grid";
-import { ProductFilters, ProductFiltersSkeleton } from "./product-filters";
-import { Skeleton } from "@/components/ui/skeleton";
-
-export const metadata = {
-  title: "All Products | Sailex Furnitures",
-  description: "Browse our complete collection of premium furniture for your home and office",
-};
+import { ChevronRight, X } from "lucide-react";
+import type { Category } from "@/lib/api";
+import { fetchJson } from "@/lib/server-fetch";
+import {
+  activeFilterCount,
+  parseProductQuery,
+  productsHref,
+  type ProductQuery,
+  type RawSearchParams,
+} from "@/lib/product-query";
+import { ProductsGridSkeleton, ProductsResults } from "./products-grid";
+import { MobileFilters, ProductFilters } from "./product-filters";
 
 interface ProductsPageProps {
-  searchParams: Promise<{
-    page?: string;
-    category?: string;
-    sort?: string;
-    search?: string;
-    minPrice?: string;
-    maxPrice?: string;
-  }>;
+  searchParams: Promise<RawSearchParams>;
 }
 
-function ProductsLoadingSkeleton() {
-  return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-      {Array.from({ length: 12 }).map((_, i) => (
-        <div key={i} className="space-y-3">
-          <Skeleton className="aspect-square rounded-lg" />
-          <Skeleton className="h-3 w-1/3" />
-          <Skeleton className="h-4 w-2/3" />
-          <Skeleton className="h-5 w-1/2" />
-          <Skeleton className="h-9 w-full" />
-        </div>
-      ))}
-    </div>
+async function getCategories(): Promise<Category[]> {
+  const { data } = await fetchJson<{
+    categories?: Category[];
+    all?: Category[];
+  }>("/categories", 300);
+  return data?.all ?? data?.categories ?? [];
+}
+
+const titleCase = (slug: string) =>
+  slug
+    .split("-")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+
+const formatKES = (value: string) =>
+  `KES ${Number(value).toLocaleString("en-KE")}`;
+
+function describePage(query: ProductQuery, categories: Category[]) {
+  const category = categories.find((c) => c.slug === query.category);
+  const categoryName = query.category
+    ? (category?.name ?? titleCase(query.category))
+    : "";
+
+  if (query.search) {
+    return {
+      title: `Search results for \u201C${query.search}\u201D`,
+      subtitle: "Products matching your search",
+      categoryName,
+    };
+  }
+  if (categoryName) {
+    return {
+      title: categoryName,
+      subtitle:
+        category?.description || "Discover our collection of premium furniture",
+      categoryName,
+    };
+  }
+  if (query.sale) {
+    return {
+      title: "Hot Deals",
+      subtitle: "Great prices on selected pieces",
+      categoryName,
+    };
+  }
+  if (query.featured) {
+    return {
+      title: "Featured Products",
+      subtitle: "Hand-picked pieces from our collection",
+      categoryName,
+    };
+  }
+  return {
+    title: "All Products",
+    subtitle: "Discover our collection of premium furniture",
+    categoryName,
+  };
+}
+
+function priceLabel(min: string, max: string) {
+  if (min && max) return `${formatKES(min)} – ${formatKES(max)}`;
+  if (max) return `Under ${formatKES(max)}`;
+  return `Over ${formatKES(min)}`;
+}
+
+export async function generateMetadata({
+  searchParams,
+}: ProductsPageProps): Promise<Metadata> {
+  const query = parseProductQuery(await searchParams);
+  const categories = await getCategories();
+  const { title, subtitle } = describePage(query, categories);
+
+  // Keep search/price/sort variations out of search engines
+  const isVariation = Boolean(
+    query.search ||
+    query.minPrice ||
+    query.maxPrice ||
+    query.sort ||
+    query.sale ||
+    query.inStock,
   );
+
+  return {
+    title: `${title} | Sailex Furnitures`,
+    description: subtitle,
+    ...(isVariation && { robots: { index: false, follow: true } }),
+  };
 }
 
-export default async function ProductsPage({ searchParams }: ProductsPageProps) {
-  const params = await searchParams;
+export default async function ProductsPage({
+  searchParams,
+}: ProductsPageProps) {
+  const query = parseProductQuery(await searchParams);
+  const categories = await getCategories();
+  const { title, subtitle, categoryName } = describePage(query, categories);
+
+  // Removable chips for every active filter
+  const chips: { label: string; href: string }[] = [];
+  if (query.search) {
+    chips.push({
+      label: `Search: \u201C${query.search}\u201D`,
+      href: productsHref(query, { search: "" }),
+    });
+  }
+  if (categoryName) {
+    chips.push({
+      label: categoryName,
+      href: productsHref(query, { category: "" }),
+    });
+  }
+  if (query.minPrice || query.maxPrice) {
+    chips.push({
+      label: priceLabel(query.minPrice, query.maxPrice),
+      href: productsHref(query, { minPrice: "", maxPrice: "" }),
+    });
+  }
+  if (query.sale) {
+    chips.push({
+      label: "On sale",
+      href: productsHref(query, { sale: false }),
+    });
+  }
+  if (query.inStock) {
+    chips.push({
+      label: "In stock",
+      href: productsHref(query, { inStock: false }),
+    });
+  }
+  if (query.featured) {
+    chips.push({
+      label: "Featured",
+      href: productsHref(query, { featured: false }),
+    });
+  }
 
   return (
-    <div className="bg-background min-h-screen">
+    <div className="min-h-screen bg-background">
       {/* Breadcrumb */}
-      <div className="bg-card border-b border-border">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3">
-          <nav className="text-sm text-muted-foreground">
-            <a href="/" className="hover:text-foreground">
+      <div className="border-b border-border bg-card">
+        <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
+          <nav
+            aria-label="Breadcrumb"
+            className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground"
+          >
+            <Link href="/" className="hover:text-foreground">
               Home
-            </a>
-            <span className="mx-2">/</span>
-            <span className="text-foreground">
-              {params.search
-                ? `Search results for "${params.search}"`
-                : params.category
-                ? params.category
-                    .split("-")
-                    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-                    .join(" ")
-                : "All Products"}
-            </span>
+            </Link>
+            <ChevronRight className="h-4 w-4" />
+            {title === "All Products" ? (
+              <span className="text-foreground">Products</span>
+            ) : (
+              <>
+                <Link href="/products" className="hover:text-foreground">
+                  Products
+                </Link>
+                <ChevronRight className="h-4 w-4" />
+                <span className="text-foreground">{title}</span>
+              </>
+            )}
           </nav>
         </div>
       </div>
 
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
-        {/* Page Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl md:text-3xl font-bold text-foreground mb-1">
-            {params.search
-              ? `Search: "${params.search}"`
-              : params.category
-              ? params.category
-                  .split("-")
-                  .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-                  .join(" ")
-              : "All Products"}
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <header className="mb-4">
+          <h1 className="mb-1 text-2xl font-bold text-foreground md:text-3xl">
+            {title}
           </h1>
-          <p className="text-muted-foreground">
-            Discover our collection of premium furniture
-          </p>
-        </div>
+          <p className="text-muted-foreground">{subtitle}</p>
+        </header>
 
-        <div className="flex flex-col lg:flex-row gap-6">
-          {/* Sidebar Filters - Desktop */}
-          <aside className="hidden lg:block lg:w-64 shrink-0">
-            <div className="sticky top-4 bg-card rounded-lg border border-border p-4">
-              <Suspense fallback={<ProductFiltersSkeleton />}>
-                <ProductFilters />
-              </Suspense>
+        {chips.length > 0 && (
+          <ul className="mb-6 flex flex-wrap items-center gap-2">
+            {chips.map((chip) => (
+              <li key={chip.label}>
+                <Link
+                  href={chip.href}
+                  aria-label={`Remove filter: ${chip.label}`}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1 text-sm text-foreground transition-colors hover:bg-secondary/70"
+                >
+                  {chip.label}
+                  <X className="h-3.5 w-3.5" aria-hidden="true" />
+                </Link>
+              </li>
+            ))}
+            {activeFilterCount(query) > 1 && (
+              <li>
+                <Link
+                  href="/products"
+                  className="px-2 text-sm text-accent hover:underline"
+                >
+                  Clear all
+                </Link>
+              </li>
+            )}
+          </ul>
+        )}
+
+        <div className="flex flex-col gap-6 lg:flex-row">
+          {/* Sidebar filters - desktop */}
+          <aside className="hidden w-64 shrink-0 lg:block">
+            <div className="sticky top-32 max-h-[calc(100vh-9rem)] overflow-y-auto rounded-lg border border-border bg-card p-4">
+              <ProductFilters query={query} categories={categories} />
             </div>
           </aside>
 
-          {/* Mobile Filters Toggle */}
-          <div className="lg:hidden">
-            <details className="bg-card rounded-lg border border-border">
-              <summary className="px-4 py-3 cursor-pointer font-medium text-foreground flex items-center justify-between">
-                <span>Filters & Search</span>
-                <svg
-                  className="h-5 w-5 text-muted-foreground"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
-              </summary>
-              <div className="px-4 pb-4">
-                <Suspense fallback={<ProductFiltersSkeleton />}>
-                  <ProductFilters />
-                </Suspense>
-              </div>
-            </details>
-          </div>
+          <div className="min-w-0 flex-1">
+            {/* Filters drawer - mobile */}
+            <div className="mb-4 lg:hidden">
+              <MobileFilters query={query} categories={categories} />
+            </div>
 
-          {/* Products Grid */}
-          <div className="flex-1">
-            <Suspense fallback={<ProductsLoadingSkeleton />}>
-              <ProductsGrid />
+            {/* Re-keyed on every URL change so the skeleton shows while loading */}
+            <Suspense
+              key={productsHref(query, { page: query.page })}
+              fallback={<ProductsGridSkeleton />}
+            >
+              <ProductsResults query={query} />
             </Suspense>
           </div>
         </div>

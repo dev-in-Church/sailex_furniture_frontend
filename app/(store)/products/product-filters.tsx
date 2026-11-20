@@ -1,292 +1,401 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
-import { useState, useTransition } from "react";
-import useSWR from "swr";
-import { Search, X, Filter, ChevronDown, ChevronUp } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import {
+  useEffect,
+  useState,
+  useTransition,
+  type FormEvent,
+  type ReactNode,
+} from "react";
+import { ChevronDown, Filter, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
+import type { Category } from "@/lib/api";
+import {
+  PRICE_RANGES,
+  SORT_OPTIONS,
+  activeFilterCount,
+  normalizePrice,
+  productsHref,
+  type ProductQuery,
+} from "@/lib/product-query";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
-// Fallback categories when backend is not available
-const fallbackCategories = [
-  { id: "1", name: "Living Room", slug: "living-room", product_count: 24 },
-  { id: "2", name: "Bedroom", slug: "bedroom", product_count: 18 },
-  { id: "3", name: "Dining", slug: "dining", product_count: 12 },
-  { id: "4", name: "Office", slug: "office", product_count: 15 },
-  { id: "5", name: "Outdoor", slug: "outdoor", product_count: 8 },
-  { id: "6", name: "Kids", slug: "kids", product_count: 10 },
-];
-
-const priceRanges = [
-  { label: "Under KES 25,000", min: "0", max: "2500000" },
-  { label: "KES 25,000 - 50,000", min: "2500000", max: "5000000" },
-  { label: "KES 50,000 - 100,000", min: "5000000", max: "10000000" },
-  { label: "Over KES 100,000", min: "10000000", max: "" },
-];
-
-interface Category {
-  id: string;
-  name: string;
-  slug: string;
-  product_count?: number;
-}
-
-const fetcher = async (url: string) => {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("Failed to fetch");
-  return res.json();
+type FilterProps = {
+  query: ProductQuery;
+  categories: Category[];
 };
 
-export function ProductFilters() {
+const bySortOrder = (a: Category, b: Category) =>
+  (a.sort_order ?? 0) - (b.sort_order ?? 0);
+
+function rootIdOf(category: Category, all: Category[]) {
+  let current = category;
+  const seen = new Set<string>();
+  while (current.parent_id && !seen.has(current.id)) {
+    seen.add(current.id);
+    const parent = all.find((c) => c.id === current.parent_id);
+    if (!parent) break;
+    current = parent;
+  }
+  return current.id;
+}
+
+const optionClass = (selected: boolean) =>
+  `flex w-full items-center rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+    selected
+      ? "bg-accent text-accent-foreground"
+      : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+  }`;
+
+function FilterSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <details open className="group border-b border-border pb-4">
+      <summary className="flex cursor-pointer list-none items-center justify-between py-1 font-medium text-foreground [&::-webkit-details-marker]:hidden">
+        {title}
+        <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="mt-3 space-y-1">{children}</div>
+    </details>
+  );
+}
+
+function FilterPanel({
+  query,
+  categories,
+  onNavigate,
+}: FilterProps & { onNavigate?: () => void }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
+  const [search, setSearch] = useState(query.search);
+  const [minPrice, setMinPrice] = useState(query.minPrice);
+  const [maxPrice, setMaxPrice] = useState(query.maxPrice);
 
-  const [search, setSearch] = useState(searchParams.get("search") || "");
-  const [expandedSections, setExpandedSections] = useState({
-    categories: true,
-    price: true,
-  });
+  // Keep the inputs in sync when filters change elsewhere (chips, back button)
+  useEffect(() => setSearch(query.search), [query.search]);
+  useEffect(() => {
+    setMinPrice(query.minPrice);
+    setMaxPrice(query.maxPrice);
+  }, [query.minPrice, query.maxPrice]);
 
-  const currentCategory = searchParams.get("category") || "";
-  const currentMinPrice = searchParams.get("minPrice") || "";
-  const currentMaxPrice = searchParams.get("maxPrice") || "";
-
-  // Fetch categories from API
-  const { data: categoriesData } = useSWR(`${API_URL}/categories`, fetcher, {
-    revalidateOnFocus: false,
-    dedupingInterval: 60000,
-  });
-
-  const categories: Category[] =
-    categoriesData?.all || categoriesData?.categories || fallbackCategories;
-
-  const updateFilters = (updates: Record<string, string>) => {
-    const params = new URLSearchParams(searchParams.toString());
-
-    Object.entries(updates).forEach(([key, value]) => {
-      if (value) {
-        params.set(key, value);
-      } else {
-        params.delete(key);
-      }
-    });
-
-    params.delete("page"); // Reset to page 1 when filtering
-
-    startTransition(() => {
-      router.push(`/products?${params.toString()}`);
-    });
+  const go = (overrides: Partial<ProductQuery>) => {
+    startTransition(() => router.push(productsHref(query, overrides)));
+    onNavigate?.();
   };
 
-  const clearFilters = () => {
-    setSearch("");
-    startTransition(() => {
-      router.push("/products");
-    });
+  const submitSearch = (event: FormEvent) => {
+    event.preventDefault();
+    go({ search: search.trim() });
   };
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    updateFilters({ search });
+  const submitPrice = (event: FormEvent) => {
+    event.preventDefault();
+    let min = normalizePrice(minPrice);
+    let max = normalizePrice(maxPrice);
+    if (min && max && Number(min) > Number(max)) [min, max] = [max, min];
+    go({ minPrice: min, maxPrice: max });
   };
 
-  const toggleSection = (section: "categories" | "price") => {
-    setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
-  };
-
-  const hasFilters =
-    searchParams.has("category") ||
-    searchParams.has("search") ||
-    searchParams.has("minPrice") ||
-    searchParams.has("maxPrice");
-
-  const activeFiltersCount = [
-    searchParams.has("category"),
-    searchParams.has("search"),
-    searchParams.has("minPrice") || searchParams.has("maxPrice"),
-  ].filter(Boolean).length;
+  const roots = categories.filter((c) => !c.parent_id).sort(bySortOrder);
+  const activeCategory = categories.find((c) => c.slug === query.category);
+  const activeRootId = activeCategory
+    ? rootIdOf(activeCategory, categories)
+    : null;
+  const count = activeFilterCount(query);
 
   return (
-    <div className="space-y-6">
-      {/* Filter Header */}
+    <div className={`space-y-5 ${isPending ? "opacity-70" : ""}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Filter className="h-5 w-5 text-foreground" />
           <span className="font-medium text-foreground">Filters</span>
-          {activeFiltersCount > 0 && (
-            <span className="bg-accent text-accent-foreground text-xs px-2 py-0.5 rounded-full">
-              {activeFiltersCount}
+          {count > 0 && (
+            <span className="rounded-full bg-accent px-2 py-0.5 text-xs text-accent-foreground">
+              {count}
             </span>
           )}
         </div>
-        {hasFilters && (
-          <button
-            onClick={clearFilters}
+        {count > 0 && (
+          <Link
+            href="/products"
+            onClick={onNavigate}
             className="text-sm text-accent hover:underline"
-            disabled={isPending}
           >
             Clear all
-          </button>
+          </Link>
         )}
       </div>
 
       {/* Search */}
-      <div className="pb-4 border-b border-border">
-        <form onSubmit={handleSearch} className="relative">
-          <Input
-            type="search"
-            placeholder="Search products..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pr-10"
-          />
-          <button
-            type="submit"
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            disabled={isPending}
-          >
-            <Search className="h-4 w-4" />
-          </button>
-        </form>
-      </div>
+      <form
+        onSubmit={submitSearch}
+        role="search"
+        className="relative border-b border-border pb-4"
+      >
+        <Input
+          type="search"
+          placeholder="Search products..."
+          aria-label="Search products"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          className="pr-10"
+        />
+        <button
+          type="submit"
+          aria-label="Search"
+          className="absolute right-3 top-[calc(50%-0.5rem)] -translate-y-1/2 text-muted-foreground hover:text-foreground"
+        >
+          <Search className="h-4 w-4" />
+        </button>
+      </form>
 
       {/* Categories */}
-      <div className="border-b border-border pb-4">
-        <button
-          onClick={() => toggleSection("categories")}
-          className="flex items-center justify-between w-full text-left mb-3"
-        >
-          <span className="font-medium text-foreground">Categories</span>
-          {expandedSections.categories ? (
-            <ChevronUp className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          )}
-        </button>
-        {expandedSections.categories && (
-          <div className="space-y-1">
-            <button
-              onClick={() => updateFilters({ category: "" })}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center justify-between ${
-                !currentCategory
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-              }`}
-              disabled={isPending}
-            >
-              <span>All Categories</span>
-            </button>
-            {categories.map((category) => (
-              <button
-                key={category.id}
-                onClick={() => updateFilters({ category: category.slug })}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center justify-between ${
-                  currentCategory === category.slug
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                }`}
-                disabled={isPending}
-              >
-                <span>{category.name}</span>
-                {category.product_count !== undefined && (
-                  <span className="text-xs opacity-60">
-                    ({category.product_count})
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Price Range */}
-      <div className="border-b border-border pb-4">
-        <button
-          onClick={() => toggleSection("price")}
-          className="flex items-center justify-between w-full text-left mb-3"
-        >
-          <span className="font-medium text-foreground">Price Range</span>
-          {expandedSections.price ? (
-            <ChevronUp className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          )}
-        </button>
-        {expandedSections.price && (
-          <div className="space-y-1">
-            <button
-              onClick={() => updateFilters({ minPrice: "", maxPrice: "" })}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                !currentMinPrice && !currentMaxPrice
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-              }`}
-              disabled={isPending}
-            >
-              Any Price
-            </button>
-            {priceRanges.map((range) => {
-              const isSelected =
-                currentMinPrice === range.min && currentMaxPrice === range.max;
-
-              return (
-                <button
-                  key={range.label}
-                  onClick={() =>
-                    updateFilters({ minPrice: range.min, maxPrice: range.max })
+      {roots.length > 0 && (
+        <FilterSection title="Categories">
+          <Link
+            href={productsHref(query, { category: "" })}
+            onClick={onNavigate}
+            aria-current={!query.category ? "true" : undefined}
+            className={optionClass(!query.category)}
+          >
+            All Categories
+          </Link>
+          {roots.map((root) => {
+            const children = categories
+              .filter((c) => c.parent_id === root.id)
+              .sort(bySortOrder);
+            return (
+              <div key={root.id}>
+                <Link
+                  href={productsHref(query, { category: root.slug })}
+                  onClick={onNavigate}
+                  aria-current={
+                    query.category === root.slug ? "true" : undefined
                   }
-                  className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                    isSelected
-                      ? "bg-accent text-accent-foreground"
-                      : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                  }`}
-                  disabled={isPending}
+                  className={optionClass(query.category === root.slug)}
                 >
-                  {range.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Clear Filters Button (Mobile) */}
-      {hasFilters && (
-        <Button
-          variant="outline"
-          className="w-full gap-2 lg:hidden"
-          onClick={clearFilters}
-          disabled={isPending}
-        >
-          <X className="h-4 w-4" />
-          Clear All Filters
-        </Button>
+                  {root.name}
+                </Link>
+                {root.id === activeRootId &&
+                  children.map((child) => (
+                    <Link
+                      key={child.id}
+                      href={productsHref(query, { category: child.slug })}
+                      onClick={onNavigate}
+                      aria-current={
+                        query.category === child.slug ? "true" : undefined
+                      }
+                      className={`ml-4 ${optionClass(query.category === child.slug)}`}
+                    >
+                      {child.name}
+                    </Link>
+                  ))}
+              </div>
+            );
+          })}
+        </FilterSection>
       )}
+
+      {/* Price */}
+      <FilterSection title="Price">
+        <Link
+          href={productsHref(query, { minPrice: "", maxPrice: "" })}
+          onClick={onNavigate}
+          className={optionClass(!query.minPrice && !query.maxPrice)}
+        >
+          Any Price
+        </Link>
+        {PRICE_RANGES.map((range) => {
+          const selected =
+            query.minPrice === range.min && query.maxPrice === range.max;
+          return (
+            <Link
+              key={range.label}
+              href={productsHref(query, {
+                minPrice: range.min,
+                maxPrice: range.max,
+              })}
+              onClick={onNavigate}
+              aria-current={selected ? "true" : undefined}
+              className={optionClass(selected)}
+            >
+              {range.label}
+            </Link>
+          );
+        })}
+
+        <form onSubmit={submitPrice} className="flex items-center gap-2 pt-2">
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            placeholder="Min"
+            aria-label="Minimum price in KES"
+            value={minPrice}
+            onChange={(event) => setMinPrice(event.target.value)}
+          />
+          <span className="text-muted-foreground">–</span>
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            placeholder="Max"
+            aria-label="Maximum price in KES"
+            value={maxPrice}
+            onChange={(event) => setMaxPrice(event.target.value)}
+          />
+          <Button type="submit" size="sm" variant="outline">
+            Go
+          </Button>
+        </form>
+      </FilterSection>
+
+      {/* Availability */}
+      <FilterSection title="Availability">
+        <label className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-secondary hover:text-foreground">
+          <input
+            type="checkbox"
+            checked={query.sale}
+            onChange={() => go({ sale: !query.sale })}
+            className="h-4 w-4 accent-accent"
+          />
+          On sale
+        </label>
+        <label className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-secondary hover:text-foreground">
+          <input
+            type="checkbox"
+            checked={query.inStock}
+            onChange={() => go({ inStock: !query.inStock })}
+            className="h-4 w-4 accent-accent"
+          />
+          In stock only
+        </label>
+      </FilterSection>
     </div>
   );
 }
 
-export function ProductFiltersSkeleton() {
+/** Desktop sidebar panel */
+export function ProductFilters({ query, categories }: FilterProps) {
+  return <FilterPanel query={query} categories={categories} />;
+}
+
+/** Mobile: a button that opens the same filters in a slide-over drawer */
+export function MobileFilters({ query, categories }: FilterProps) {
+  const [open, setOpen] = useState(false);
+  const count = activeFilterCount(query);
+
+  useEffect(() => {
+    if (!open) return;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = "";
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
   return (
-    <div className="space-y-6">
-      <Skeleton className="h-6 w-24" />
-      <Skeleton className="h-10 w-full" />
-      <div className="space-y-2">
-        <Skeleton className="h-5 w-20" />
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-9 w-full" />
-        ))}
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        className="w-full gap-2 lg:hidden"
+        onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+      >
+        <Filter className="h-4 w-4" />
+        Filters
+        {count > 0 && (
+          <span className="rounded-full bg-accent px-2 py-0.5 text-xs text-accent-foreground">
+            {count}
+          </span>
+        )}
+      </Button>
+
+      {open && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/50 lg:hidden"
+          onClick={() => setOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Filters"
+        inert={!open}
+        className={`fixed inset-y-0 left-0 z-[60] flex w-[320px] max-w-[90vw] transform flex-col bg-card shadow-xl transition-transform duration-300 ease-in-out lg:hidden ${
+          open ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="flex items-center justify-between border-b border-border p-4">
+          <span className="font-semibold text-foreground">Filters</span>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            aria-label="Close filters"
+            className="rounded-lg p-2 hover:bg-secondary"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4">
+          {open && (
+            <FilterPanel
+              query={query}
+              categories={categories}
+              onNavigate={() => setOpen(false)}
+            />
+          )}
+        </div>
+
+        <div className="border-t border-border p-4">
+          <Button className="w-full" onClick={() => setOpen(false)}>
+            Show results
+          </Button>
+        </div>
       </div>
-      <div className="space-y-2">
-        <Skeleton className="h-5 w-24" />
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-9 w-full" />
+    </>
+  );
+}
+
+/** Sort dropdown shown above the results */
+export function SortSelect({ query }: { query: ProductQuery }) {
+  const router = useRouter();
+
+  return (
+    <label className="flex items-center gap-2 text-sm">
+      <span className="text-muted-foreground">Sort by:</span>
+      <select
+        value={query.sort || "newest"}
+        onChange={(event) => {
+          const value = event.target.value;
+          router.push(
+            productsHref(query, { sort: value === "newest" ? "" : value }),
+          );
+        }}
+        className="rounded-lg border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+      >
+        {SORT_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
         ))}
-      </div>
-    </div>
+      </select>
+    </label>
   );
 }

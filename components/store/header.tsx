@@ -2,27 +2,29 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, type ElementType } from "react";
+import { usePathname } from "next/navigation";
+import useSWR from "swr";
 import {
-  Menu,
-  X,
-  ShoppingCart,
-  User,
-  Search,
+  Armchair,
+  BedDouble,
+  Briefcase,
   ChevronDown,
   ChevronRight,
-  HelpCircle,
-  Sofa,
-  BedDouble,
-  UtensilsCrossed,
-  Briefcase,
-  Lamp,
   DoorOpen,
-  Zap,
+  HelpCircle,
+  Lamp,
   LogOut,
+  Menu,
+  MessageCircle,
   Package,
-  Heart,
+  Phone,
+  ShoppingCart,
+  Sofa,
+  User,
+  UtensilsCrossed,
+  X,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,83 +34,124 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { api, type Category } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { useCart } from "@/lib/cart-context";
+import { SearchBox } from "./search-box";
 
-const categories = [
-  { name: "Living Room", slug: "living-room", icon: Sofa },
-  { name: "Bedroom", slug: "bedroom", icon: BedDouble },
-  { name: "Dining", slug: "dining", icon: UtensilsCrossed },
-  { name: "Office", slug: "office", icon: Briefcase },
-  { name: "Outdoor", slug: "outdoor", icon: DoorOpen },
-  { name: "Storage", slug: "storage", icon: Lamp },
-];
+const PHONE_DISPLAY = "+254 706 169 006";
+const PHONE_HREF = "tel:+254706169006";
+const WHATSAPP_NUMBER = (process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "").replace(
+  /\D/g,
+  "",
+);
+const WHATSAPP_HREF = WHATSAPP_NUMBER
+  ? `https://wa.me/${WHATSAPP_NUMBER}`
+  : null;
+
+// "Contact us" opens WhatsApp when configured, otherwise dials the shop
+const CONTACT_HREF = WHATSAPP_HREF ?? PHONE_HREF;
+const CONTACT_LINK_PROPS = WHATSAPP_HREF
+  ? { target: "_blank", rel: "noopener noreferrer" }
+  : {};
+
+const MAX_NAV_CATEGORIES = 8;
+
+const categoryIcons: Record<string, ElementType> = {
+  "living-room": Sofa,
+  bedroom: BedDouble,
+  dining: UtensilsCrossed,
+  office: Briefcase,
+  outdoor: DoorOpen,
+  storage: Lamp,
+};
+
+const iconFor = (slug: string): ElementType => categoryIcons[slug] ?? Armchair;
 
 export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const { user, logout } = useAuth();
   const { itemCount, total } = useCart();
-  const router = useRouter();
+  const pathname = usePathname();
 
-  // Prevent body scroll when mobile menu is open
+  // Categories come from the API so the header never links to a missing page
+  const { data: allCategories } = useSWR<Category[]>(
+    "header-categories",
+    () => api.categories.getAll(),
+    { revalidateOnFocus: false },
+  );
+  const categories = (allCategories ?? [])
+    .filter((category) => !category.parent_id)
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+    .slice(0, MAX_NAV_CATEGORIES);
+
+  // Close the mobile menu whenever the page changes
   useEffect(() => {
-    if (mobileMenuOpen) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
+    setMobileMenuOpen(false);
+  }, [pathname]);
+
+  // Lock body scroll and allow Escape to close while the mobile menu is open
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileMenuOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
     return () => {
       document.body.style.overflow = "";
+      document.removeEventListener("keydown", onKeyDown);
     };
   }, [mobileMenuOpen]);
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (searchQuery.trim()) {
-      router.push(`/products?search=${encodeURIComponent(searchQuery.trim())}`);
-      setMobileMenuOpen(false);
-    }
-  };
 
   const closeMobileMenu = () => setMobileMenuOpen(false);
 
   return (
     <>
-      <header className="sticky top-0 z-50 bg-primary shadow-md">
+      {/* On desktop the top bar scrolls away (md:-top-8) while the rest stays pinned */}
+      <header className="sticky top-0 z-50 bg-primary shadow-md md:-top-8">
         {/* Top Bar */}
-        <div className="hidden md:block bg-accent border-b border-primary-foreground/10">
-          <div className="mx-auto max-w-7xl px-4 flex items-center justify-between h-8 text-xs text-primary-foreground/80">
+        <div className="hidden border-b border-primary-foreground/10 bg-accent md:block">
+          <div className="mx-auto flex h-8 max-w-7xl items-center justify-between px-4 text-xs text-primary-foreground/80">
             <div className="flex items-center gap-4">
-              <span>+254 706 169 006</span>
-              <span className="h-3 w-px bg-primary-foreground/30" />
-              <Link
-                href="/help"
-                className="hover:text-primary-foreground flex items-center gap-1"
+              <a
+                href={PHONE_HREF}
+                className="flex items-center gap-1 hover:text-primary-foreground"
               >
-                <HelpCircle className="h-3 w-3" />
-                Help Center
-              </Link>
+                <Phone className="h-3 w-3" />
+                {PHONE_DISPLAY}
+              </a>
+              {WHATSAPP_HREF && (
+                <>
+                  <span className="h-3 w-px bg-primary-foreground/30" />
+                  <a
+                    href={WHATSAPP_HREF}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 hover:text-primary-foreground"
+                  >
+                    <MessageCircle className="h-3 w-3" />
+                    Chat on WhatsApp
+                  </a>
+                </>
+              )}
             </div>
-            <div className="flex items-center gap-4">
-              <Link
-                href="/track-order"
-                className="hover:text-primary-foreground"
-              >
-                Track Order
-              </Link>
-            </div>
+            <Link href="/track-order" className="hover:text-primary-foreground">
+              Track Order
+            </Link>
           </div>
         </div>
 
         {/* Main Header */}
-        <nav className="mx-auto max-w-7xl bg-white px-4">
+        <nav className="mx-auto max-w-7xl bg-white px-4" aria-label="Main">
           <div className="flex h-16 items-center gap-4 lg:gap-8">
             {/* Mobile Menu Button */}
             <button
               type="button"
-              className="lg:hidden p-2 -ml-2 text-primary"
+              className="-ml-2 p-2 text-primary lg:hidden"
               onClick={() => setMobileMenuOpen(true)}
+              aria-expanded={mobileMenuOpen}
+              aria-controls="mobile-menu"
             >
               <Menu className="h-8 w-8" />
               <span className="sr-only">Open menu</span>
@@ -121,35 +164,19 @@ export function Header() {
                 alt="Sailex Furnitures"
                 width={100}
                 height={50}
-                className="h-10 md:h-16 w-auto"
+                priority
+                className="h-10 w-auto md:h-16"
               />
             </Link>
 
-            {/* Search Bar */}
-            <form
-              onSubmit={handleSearch}
-              className="flex-1 max-w-2xl hidden md:flex"
-            >
-              <div className="flex w-full items-center bg-[#f1f1f2] rounded-full pl-4 pr-1 py-1 border border-gray-200">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search for furniture, sofas, beds..."
-                  className="flex-1 bg-transparent text-gray-800 placeholder:text-gray-500 text-sm focus:outline-none py-1.5"
-                />
-                <Button
-                  type="submit"
-                  className="rounded-full bg-[#f68b1e] hover:bg-[#e07b1a] text-white px-8 h-9 font-semibold text-sm shadow-sm transition-colors border-none"
-                >
-                  <Search className="h-5 w-5" />
-                  <span className="">Search</span>
-                </Button>
-              </div>
-            </form>
+            {/* Search Bar - Desktop */}
+            <SearchBox
+              placeholder="Search for furniture, sofas, beds..."
+              className="hidden max-w-2xl flex-1 md:block"
+            />
 
             {/* Right Actions */}
-            <div className="flex items-center gap-2 lg:gap-4 ml-auto">
+            <div className="ml-auto flex items-center gap-2 lg:gap-4">
               {/* Account */}
               {user ? (
                 <DropdownMenu>
@@ -160,13 +187,13 @@ export function Header() {
                       className="gap-2 text-primary hover:bg-primary/10"
                     >
                       <User className="h-5 w-5" />
-                      <div className="hidden lg:block text-left">
+                      <div className="hidden text-left lg:block">
                         <p className="text-xs">Welcome</p>
                         <p className="text-sm font-medium">
                           {user.name.split(" ")[0]}
                         </p>
                       </div>
-                      <ChevronDown className="h-4 w-4 hidden lg:block" />
+                      <ChevronDown className="hidden h-4 w-4 lg:block" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48">
@@ -175,9 +202,6 @@ export function Header() {
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
                       <Link href="/account/orders">My Orders</Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                      <Link href="/account/wishlist">Wishlist</Link>
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={logout}>
@@ -191,14 +215,14 @@ export function Header() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="flex items-center gap-2 text-primary hover:bg-primary/10 hover:text-primary px-3 py-2 rounded-lg h-full"
+                      className="flex h-full items-center gap-2 rounded-lg px-3 py-2 text-primary hover:bg-primary/10 hover:text-primary"
                     >
                       <User className="h-5 w-5" />
-                      <div className="hidden lg:block text-left">
+                      <div className="hidden text-left lg:block">
                         <p className="text-xs">Sign In</p>
                         <p className="text-sm font-medium">Account</p>
                       </div>
-                      <ChevronDown className="h-4 w-4 hidden lg:block" />
+                      <ChevronDown className="hidden h-4 w-4 lg:block" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48">
@@ -213,80 +237,79 @@ export function Header() {
               )}
 
               {/* Help - Desktop */}
-              <Link
-                href="/help"
-                className="hidden lg:flex items-center gap-2 text-primary hover:bg-primary/10 px-3 py-2 rounded-lg"
+              <a
+                href={CONTACT_HREF}
+                {...CONTACT_LINK_PROPS}
+                className="hidden items-center gap-2 rounded-lg px-3 py-2 text-primary hover:bg-primary/10 lg:flex"
               >
                 <HelpCircle className="h-5 w-5" />
                 <div className="text-left">
                   <p className="text-xs">Need Help?</p>
                   <p className="text-sm font-medium">Contact Us</p>
                 </div>
-              </Link>
+              </a>
 
               {/* Cart */}
               <Link
                 href="/cart"
-                className="flex items-center gap-2 text-primary hover:bg-primary/10 px-3 py-2 rounded-lg"
+                className="flex items-center gap-2 rounded-lg px-3 py-2 text-primary hover:bg-primary/10"
+                aria-label={`Cart, ${itemCount} item${itemCount === 1 ? "" : "s"}`}
               >
                 <div className="relative">
                   <ShoppingCart className="h-5 w-5" />
                   {itemCount > 0 && (
-                    <span className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-accent text-accent-foreground text-xs flex items-center justify-center font-bold">
+                    <span className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-accent text-xs font-bold text-accent-foreground">
                       {itemCount > 99 ? "99+" : itemCount}
                     </span>
                   )}
                 </div>
-                <div className="hidden lg:block text-left">
+                <div className="hidden text-left lg:block">
                   <p className="text-xs opacity-80">Cart</p>
                   <p className="text-sm font-medium">
-                    KES {total.toLocaleString()}
+                    KES {total.toLocaleString("en-KE")}
                   </p>
                 </div>
               </Link>
             </div>
           </div>
-          {/* Mobile Search */}
-          <form onSubmit={handleSearch} className="md:hidden pb-3">
-            <div className="flex w-full items-center bg-[#f1f1f2] rounded-full pl-4 pr-1 py-1 border border-gray-200">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search furniture..."
-                className="flex-1 bg-transparent text-gray-800 placeholder:text-gray-500 text-sm focus:outline-none py-1.5"
-              />
-              <Button
-                type="submit"
-                className="rounded-full bg-[#f68b1e] hover:bg-[#e07b1a] text-white px-5 h-9 font-semibold text-sm transition-colors border-none"
-              >
-                <Search className="h-5 w-5" />
-                <span className="">Search</span>
-              </Button>
-            </div>
-          </form>
+
+          {/* Search Bar - Mobile */}
+          <SearchBox
+            placeholder="Search furniture..."
+            className="pb-3 md:hidden"
+          />
         </nav>
 
         {/* Category Navigation - Desktop */}
-        <div className="hidden lg:block bg-primary-foreground/5 border-t border-primary-foreground/10">
+        <div className="hidden border-t border-primary-foreground/10 bg-primary-foreground/5 lg:block">
           <div className="mx-auto max-w-7xl px-4">
-            <div className="flex items-center gap-6 h-10">
-              {categories.map((category) => (
-                <Link
-                  key={category.slug}
-                  href={`/categories/${category.slug}`}
-                  className="flex items-center gap-1.5 text-sm text-primary-foreground/90 hover:text-primary-foreground transition-colors"
-                >
-                  <category.icon className="h-4 w-4" />
-                  {category.name}
-                </Link>
-              ))}
-              {/* <Link
+            <div className="flex h-10 items-center gap-6">
+              {categories.map((category) => {
+                const Icon = iconFor(category.slug);
+                const active = pathname === `/categories/${category.slug}`;
+                return (
+                  <Link
+                    key={category.id}
+                    href={`/categories/${category.slug}`}
+                    aria-current={active ? "page" : undefined}
+                    className={`flex items-center gap-1.5 text-sm transition-colors hover:text-primary-foreground ${
+                      active
+                        ? "font-semibold text-primary-foreground"
+                        : "text-primary-foreground/90"
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {category.name}
+                  </Link>
+                );
+              })}
+              <Link
                 href="/products?sale=true"
-                className="text-sm font-semibold text-accent hover:text-accent/90 ml-auto"
+                className="ml-auto flex items-center gap-1.5 text-sm font-semibold text-accent hover:text-accent/90"
               >
-                FLASH SALES
-              </Link> */}
+                <Zap className="h-4 w-4" />
+                Hot Deals
+              </Link>
             </div>
           </div>
         </div>
@@ -297,19 +320,25 @@ export function Header() {
         <div
           className="fixed inset-0 z-50 bg-black/50 lg:hidden"
           onClick={closeMobileMenu}
+          aria-hidden="true"
         />
       )}
 
       {/* Mobile Side Menu */}
       <div
-        className={`fixed top-0 left-0 z-50 h-full w-[300px] max-w-[85vw] bg-card shadow-xl transform transition-transform duration-300 ease-in-out lg:hidden ${
+        id="mobile-menu"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Menu"
+        inert={!mobileMenuOpen}
+        className={`fixed left-0 top-0 z-50 h-full w-[300px] max-w-[85vw] transform bg-card shadow-xl transition-transform duration-300 ease-in-out lg:hidden ${
           mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         {/* Menu Header */}
-        <div className="flex items-center justify-between p-4 bg-primary text-primary-foreground">
+        <div className="flex items-center justify-between bg-primary p-4 text-primary-foreground">
           <div className="flex items-center gap-3">
-            <User className="h-8 w-8 p-1.5 bg-primary-foreground/20 rounded-full" />
+            <User className="h-8 w-8 rounded-full bg-primary-foreground/20 p-1.5" />
             {user ? (
               <div>
                 <p className="font-medium">{user.name}</p>
@@ -329,18 +358,19 @@ export function Header() {
             )}
           </div>
           <button
+            type="button"
             onClick={closeMobileMenu}
-            className="p-2 hover:bg-primary-foreground/10 rounded-lg"
+            aria-label="Close menu"
+            className="rounded-lg p-2 hover:bg-primary-foreground/10"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Menu Content */}
-        <div className="overflow-y-auto h-[calc(100%-72px)]">
-          {/* Quick Links */}
+        <div className="h-[calc(100%-72px)] overflow-y-auto">
           {user && (
-            <div className="p-4 border-b border-border">
+            <div className="border-b border-border p-4">
               <Link
                 href="/account/orders"
                 onClick={closeMobileMenu}
@@ -352,72 +382,74 @@ export function Header() {
                 </span>
                 <ChevronRight className="h-4 w-4 text-muted-foreground" />
               </Link>
-              <Link
-                href="/account/wishlist"
-                onClick={closeMobileMenu}
-                className="flex items-center justify-between py-2 text-foreground"
-              >
-                <span className="flex items-center gap-3">
-                  <Heart className="h-5 w-5 text-muted-foreground" />
-                  Wishlist
-                </span>
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              </Link>
             </div>
           )}
 
           {/* Categories */}
           <div className="p-4">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Categories
             </p>
             <div className="flex flex-col gap-1">
-              {categories.map((category) => (
-                <Link
-                  key={category.slug}
-                  href={`/categories/${category.slug}`}
-                  onClick={closeMobileMenu}
-                  className="flex items-center justify-between py-3 px-3 text-foreground hover:bg-secondary rounded-lg transition-colors"
-                >
-                  <span className="flex items-center gap-3">
-                    <category.icon className="h-5 w-5 text-muted-foreground" />
-                    {category.name}
-                  </span>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                </Link>
-              ))}
+              {categories.map((category) => {
+                const Icon = iconFor(category.slug);
+                return (
+                  <Link
+                    key={category.id}
+                    href={`/categories/${category.slug}`}
+                    onClick={closeMobileMenu}
+                    className="flex items-center justify-between rounded-lg px-3 py-3 text-foreground transition-colors hover:bg-secondary"
+                  >
+                    <span className="flex items-center gap-3">
+                      <Icon className="h-5 w-5 text-muted-foreground" />
+                      {category.name}
+                    </span>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  </Link>
+                );
+              })}
             </div>
           </div>
 
-          {/* Flash Sales */}
+          {/* Hot Deals */}
           <div className="px-4 pb-4">
             <Link
               href="/products?sale=true"
               onClick={closeMobileMenu}
-              className="flex items-center gap-3 py-3 px-3 bg-accent/10 text-accent font-semibold rounded-lg"
+              className="flex items-center gap-3 rounded-lg bg-accent/10 px-3 py-3 font-semibold text-accent"
             >
               <Zap className="h-5 w-5" />
-              Flash Sales
+              Hot Deals
             </Link>
           </div>
 
           {/* Help & Support */}
-          <div className="p-4 border-t border-border">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-              Help & Support
+          <div className="border-t border-border p-4">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Help &amp; Support
             </p>
-            <Link
-              href="/help"
-              onClick={closeMobileMenu}
-              className="flex items-center gap-3 py-3 px-3 text-foreground hover:bg-secondary rounded-lg transition-colors"
+            {WHATSAPP_HREF && (
+              <a
+                href={WHATSAPP_HREF}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 rounded-lg px-3 py-3 text-foreground transition-colors hover:bg-secondary"
+              >
+                <MessageCircle className="h-5 w-5 text-muted-foreground" />
+                Chat on WhatsApp
+              </a>
+            )}
+            <a
+              href={PHONE_HREF}
+              className="flex items-center gap-3 rounded-lg px-3 py-3 text-foreground transition-colors hover:bg-secondary"
             >
-              <HelpCircle className="h-5 w-5 text-muted-foreground" />
-              Help Center
-            </Link>
+              <Phone className="h-5 w-5 text-muted-foreground" />
+              Call {PHONE_DISPLAY}
+            </a>
             <Link
               href="/track-order"
               onClick={closeMobileMenu}
-              className="flex items-center gap-3 py-3 px-3 text-foreground hover:bg-secondary rounded-lg transition-colors"
+              className="flex items-center gap-3 rounded-lg px-3 py-3 text-foreground transition-colors hover:bg-secondary"
             >
               <Package className="h-5 w-5 text-muted-foreground" />
               Track Order
@@ -426,13 +458,14 @@ export function Header() {
 
           {/* Sign Out */}
           {user && (
-            <div className="p-4 border-t border-border">
+            <div className="border-t border-border p-4">
               <button
+                type="button"
                 onClick={() => {
                   logout();
                   closeMobileMenu();
                 }}
-                className="flex items-center gap-3 py-3 px-3 w-full text-left text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-destructive transition-colors hover:bg-destructive/10"
               >
                 <LogOut className="h-5 w-5" />
                 Sign Out

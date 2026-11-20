@@ -2,14 +2,24 @@
 
 import {
   createContext,
-  useContext,
   useCallback,
-  useState,
+  useContext,
   useEffect,
+  useMemo,
+  useRef,
+  useState,
   type ReactNode,
 } from "react";
-import { useAuth } from "./auth-context";
 import Cookies from "js-cookie";
+import { toast } from "sonner";
+import { useAuth, getSessionId } from "./auth-context";
+import {
+  addToCart as apiAddToCart,
+  getCart,
+  removeCartItem,
+  updateCartItem,
+  type CartItem as ApiCartItem,
+} from "./api";
 
 // Types
 export interface LocalCartItem {
@@ -32,342 +42,238 @@ interface CartContextType {
   total: number;
   itemCount: number;
   isLoading: boolean;
+  /** Each action shows its own error toast and resolves to true on success. */
   addToCart: (
     productId: string,
     quantity?: number,
     productData?: Partial<LocalCartItem>,
-  ) => Promise<void>;
-  updateQuantity: (itemId: string, quantity: number) => Promise<void>;
-  removeItem: (itemId: string) => Promise<void>;
+  ) => Promise<boolean>;
+  updateQuantity: (itemId: string, quantity: number) => Promise<boolean>;
+  removeItem: (itemId: string) => Promise<boolean>;
   clearCart: () => void;
   refresh: () => void;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
-const CART_COOKIE_KEY = "sailex_cart";
-const CART_STORAGE_KEY = "sailex_cart";
+// The cart used to live in a cookie/localStorage. It now lives on the server
+// (guests via their session id, customers via their account), so the old
+// browser copy is removed.
+const LEGACY_CART_KEY = "sailex_cart";
 
-// Helper to get cart from storage (cookies first, then localStorage)
-function getStoredCart(): LocalCartItem[] {
-  if (typeof window === "undefined") return [];
-
-  // Try cookies first
-  const cookieCart = Cookies.get(CART_COOKIE_KEY);
-  if (cookieCart) {
-    try {
-      return JSON.parse(cookieCart);
-    } catch {
-      // Invalid JSON, clear it
-      Cookies.remove(CART_COOKIE_KEY);
-    }
-  }
-
-  // Fall back to localStorage
-  try {
-    const stored = localStorage.getItem(CART_STORAGE_KEY);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-  } catch {
-    // localStorage not available or invalid
-  }
-
-  return [];
-}
-
-// Helper to save cart to storage
-function saveCart(items: LocalCartItem[]): void {
-  if (typeof window === "undefined") return;
-
-  const cartJson = JSON.stringify(items);
-
-  // Save to cookies (expires in 30 days)
-  try {
-    Cookies.set(CART_COOKIE_KEY, cartJson, { expires: 30, sameSite: "lax" });
-  } catch {
-    // Cookie might be too large, fall back to localStorage only
-  }
-
-  // Also save to localStorage as backup
-  try {
-    localStorage.setItem(CART_STORAGE_KEY, cartJson);
-  } catch {
-    // localStorage not available
-  }
-}
-
-// Helper to clear cart from storage
-function clearStoredCart(): void {
-  if (typeof window === "undefined") return;
-  Cookies.remove(CART_COOKIE_KEY);
-  try {
-    localStorage.removeItem(CART_STORAGE_KEY);
-  } catch {
-    // Ignore
-  }
-}
-
-// API functions with error handling
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
-
-async function fetchCartAPI<T>(
-  endpoint: string,
-  options: RequestInit & { token?: string } = {},
-): Promise<T | null> {
-  const { token, ...fetchOptions } = options;
-
-  const headers: HeadersInit = {
-    "Content-Type": "application/json",
-    ...options.headers,
+const toCartItem = (item: ApiCartItem): CartItem => {
+  const price = String(item.price);
+  const quantity = Number(item.quantity);
+  return {
+    id: item.id,
+    product_id: item.product_id,
+    name: item.name,
+    slug: item.slug,
+    price,
+    quantity,
+    images: item.images ?? [],
+    stock_quantity: item.stock_quantity,
+    subtotal: Number.isFinite(item.subtotal)
+      ? item.subtotal
+      : parseFloat(price) * quantity,
   };
+};
 
-  if (token) {
-    (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
-  }
+const upsertLine = (items: CartItem[], line: CartItem): CartItem[] => {
+  const index = items.findIndex((i) => i.product_id === line.product_id);
+  if (index === -1) return [line, ...items];
+  const next = [...items];
+  next[index] = line;
+  return next;
+};
 
-  try {
-    const response = await fetch(`${API_URL}${endpoint}`, {
-      ...fetchOptions,
-      headers,
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    return response.json();
-  } catch {
-    // API not available
-    return null;
-  }
-}
+const errorMessage = (err: unknown) =>
+  err instanceof Error ? err.message : "Couldn't update your cart";
 
 export function CartProvider({ children }: { children: ReactNode }) {
-  const { token, user } = useAuth();
+  const { token, isLoading: authLoading } = useAuth();
   const [items, setItems] = useState<CartItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isInitialized, setIsInitialized] = useState(false);
+  const requestId = useRef(0);
 
-  // Calculate totals
-  const total = items.reduce((sum, item) => sum + item.subtotal, 0);
-  const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
+  const total = useMemo(
+    () => items.reduce((sum, item) => sum + item.subtotal, 0),
+    [items],
+  );
+  const itemCount = useMemo(
+    () => items.reduce((sum, item) => sum + item.quantity, 0),
+    [items],
+  );
 
-  // Convert LocalCartItem to CartItem
-  const toCartItem = (item: LocalCartItem): CartItem => ({
-    ...item,
-    subtotal: parseFloat(item.price) * item.quantity,
-  });
+  // Who owns the cart: the logged-in customer, or this browser's guest session
+  const credentials = useCallback(
+    () =>
+      token
+        ? { token, sessionId: undefined }
+        : { token: undefined, sessionId: getSessionId() || undefined },
+    [token],
+  );
 
-  // Load cart on mount and when auth changes
-  const loadCart = useCallback(async () => {
-    setIsLoading(true);
-
-    if (token && user) {
-      // User is logged in - try to fetch from API
-      const apiCart = await fetchCartAPI<{ items: CartItem[]; total: number }>(
-        "/cart",
-        { token },
-      );
-
-      if (apiCart && apiCart.items) {
-        // Merge local cart with server cart
-        const localItems = getStoredCart();
-
-        if (localItems.length > 0) {
-          // Merge local items to server
-          for (const localItem of localItems) {
-            await fetchCartAPI("/cart/items", {
-              method: "POST",
-              body: JSON.stringify({
-                productId: localItem.product_id,
-                quantity: localItem.quantity,
-              }),
-              token,
-            });
-          }
-          // Clear local storage after merge
-          clearStoredCart();
-
-          // Refetch merged cart
-          const mergedCart = await fetchCartAPI<{
-            items: CartItem[];
-            total: number;
-          }>("/cart", { token });
-          if (mergedCart) {
-            setItems(mergedCart.items || []);
-          }
-        } else {
-          setItems(apiCart.items);
-        }
-      } else {
-        // API not available, use local storage
-        const localItems = getStoredCart();
-        setItems(localItems.map(toCartItem));
+  const load = useCallback(
+    async (silent = false) => {
+      const id = ++requestId.current;
+      if (!silent) setIsLoading(true);
+      try {
+        const { token: t, sessionId } = credentials();
+        const data = await getCart(sessionId, t);
+        if (id === requestId.current) setItems(data.items.map(toCartItem));
+      } catch (err) {
+        console.error("Failed to load cart:", err);
+      } finally {
+        if (id === requestId.current) setIsLoading(false);
       }
-    } else {
-      // Not logged in - use local storage
-      const localItems = getStoredCart();
-      setItems(localItems.map(toCartItem));
-    }
+    },
+    [credentials],
+  );
 
-    setIsLoading(false);
-    setIsInitialized(true);
-  }, [token, user]);
-
+  // One-time cleanup of the old browser-stored cart
   useEffect(() => {
-    loadCart();
-  }, [loadCart]);
+    Cookies.remove(LEGACY_CART_KEY);
+    try {
+      localStorage.removeItem(LEGACY_CART_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
 
-  // Add to cart
+  // Load once auth has settled, and again whenever the user logs in or out
+  useEffect(() => {
+    if (!authLoading) void load();
+  }, [authLoading, load]);
+
   const addToCart = useCallback(
     async (
       productId: string,
       quantity = 1,
       productData?: Partial<LocalCartItem>,
     ) => {
-      if (token && user) {
-        // Logged in - use API
-        const result = await fetchCartAPI<{ item: CartItem }>("/cart/items", {
-          method: "POST",
-          body: JSON.stringify({ productId, quantity }),
-          token,
-        });
+      try {
+        const { token: t, sessionId } = credentials();
+        const { item } = await apiAddToCart(productId, quantity, sessionId, t);
 
-        if (result) {
-          // Refresh cart from server
-          loadCart();
-          return;
+        if (
+          productData?.name &&
+          productData.slug &&
+          productData.price !== undefined
+        ) {
+          // We know enough to update the cart instantly without another request
+          const price = String(productData.price);
+          setItems((prev) =>
+            upsertLine(prev, {
+              id: item.id,
+              product_id: productId,
+              name: productData.name!,
+              slug: productData.slug!,
+              price,
+              quantity: item.quantity,
+              images: productData.images ?? [],
+              stock_quantity: productData.stock_quantity ?? 99,
+              subtotal: parseFloat(price) * item.quantity,
+            }),
+          );
+        } else {
+          await load(true);
         }
-      }
-
-      // Not logged in or API failed - use local storage
-      const currentItems = getStoredCart();
-      const existingIndex = currentItems.findIndex(
-        (item) => item.product_id === productId,
-      );
-
-      if (existingIndex >= 0) {
-        // Update quantity
-        currentItems[existingIndex].quantity += quantity;
-      } else {
-        // Add new item - we need product data
-        const newItem: LocalCartItem = {
-          id: `local_${Date.now()}_${productId}`,
-          product_id: productId,
-          name: productData?.name || "Product",
-          slug: productData?.slug || productId,
-          price: productData?.price || "0",
-          quantity,
-          images: productData?.images || [],
-          stock_quantity: productData?.stock_quantity || 99,
-        };
-        currentItems.push(newItem);
-      }
-
-      saveCart(currentItems);
-      setItems(currentItems.map(toCartItem));
-    },
-    [token, user, loadCart],
-  );
-
-  // Update quantity
-  const updateQuantity = useCallback(
-    async (itemId: string, quantity: number) => {
-      if (quantity <= 0) {
-        return removeItem(itemId);
-      }
-
-      if (token && user && !itemId.startsWith("local_")) {
-        // Logged in - use API
-        const result = await fetchCartAPI<{ item: CartItem }>(
-          `/cart/items/${itemId}`,
-          {
-            method: "PUT",
-            body: JSON.stringify({ quantity }),
-            token,
-          },
-        );
-
-        if (result) {
-          loadCart();
-          return;
-        }
-      }
-
-      // Use local storage
-      const currentItems = getStoredCart();
-      const itemIndex = currentItems.findIndex(
-        (item) => item.id === itemId || item.product_id === itemId,
-      );
-
-      if (itemIndex >= 0) {
-        currentItems[itemIndex].quantity = quantity;
-        saveCart(currentItems);
-        setItems(currentItems.map(toCartItem));
+        return true;
+      } catch (err) {
+        toast.error(errorMessage(err));
+        return false;
       }
     },
-    [token, user, loadCart],
+    [credentials, load],
   );
 
-  // Remove item
+  // itemId can be the cart item's id or its product id
   const removeItem = useCallback(
     async (itemId: string) => {
-      if (token && user && !itemId.startsWith("local_")) {
-        // Logged in - use API
-        const result = await fetchCartAPI<{ message: string }>(
-          `/cart/items/${itemId}`,
-          {
-            method: "DELETE",
-            token,
-          },
-        );
-
-        if (result) {
-          loadCart();
-          return;
-        }
-      }
-
-      // Use local storage
-      const currentItems = getStoredCart();
-      const filtered = currentItems.filter(
-        (item) => item.id !== itemId && item.product_id !== itemId,
+      const line = items.find(
+        (i) => i.id === itemId || i.product_id === itemId,
       );
-      saveCart(filtered);
-      setItems(filtered.map(toCartItem));
+      if (!line) return false;
+      try {
+        const { token: t, sessionId } = credentials();
+        await removeCartItem(line.id, sessionId, t);
+        setItems((prev) => prev.filter((i) => i.id !== line.id));
+        return true;
+      } catch (err) {
+        toast.error(errorMessage(err));
+        return false;
+      }
     },
-    [token, user, loadCart],
+    [items, credentials],
   );
 
-  // Clear cart
+  const updateQuantity = useCallback(
+    async (itemId: string, quantity: number) => {
+      const line = items.find(
+        (i) => i.id === itemId || i.product_id === itemId,
+      );
+      if (!line) return false;
+      if (quantity <= 0) return removeItem(line.id);
+
+      try {
+        const { token: t, sessionId } = credentials();
+        const { item } = await updateCartItem(line.id, quantity, sessionId, t);
+        setItems((prev) =>
+          prev.map((i) =>
+            i.id === line.id
+              ? {
+                  ...i,
+                  quantity: item.quantity,
+                  subtotal: parseFloat(i.price) * item.quantity,
+                }
+              : i,
+          ),
+        );
+        return true;
+      } catch (err) {
+        toast.error(errorMessage(err));
+        return false;
+      }
+    },
+    [items, credentials, removeItem],
+  );
+
+  // The server empties the cart when an order is created; this just resets the UI
   const clearCart = useCallback(() => {
-    clearStoredCart();
     setItems([]);
   }, []);
 
-  // Refresh cart
   const refresh = useCallback(() => {
-    loadCart();
-  }, [loadCart]);
+    void load();
+  }, [load]);
 
-  return (
-    <CartContext.Provider
-      value={{
-        items,
-        total,
-        itemCount,
-        isLoading: isLoading || !isInitialized,
-        addToCart,
-        updateQuantity,
-        removeItem,
-        clearCart,
-        refresh,
-      }}
-    >
-      {children}
-    </CartContext.Provider>
+  const value = useMemo<CartContextType>(
+    () => ({
+      items,
+      total,
+      itemCount,
+      isLoading,
+      addToCart,
+      updateQuantity,
+      removeItem,
+      clearCart,
+      refresh,
+    }),
+    [
+      items,
+      total,
+      itemCount,
+      isLoading,
+      addToCart,
+      updateQuantity,
+      removeItem,
+      clearCart,
+      refresh,
+    ],
   );
+
+  return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }
 
 export function useCart() {

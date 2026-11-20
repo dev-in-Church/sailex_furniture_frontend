@@ -1,7 +1,20 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
-import { type User, getMe, login as apiLogin, register as apiRegister, mergeCart } from "./api";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+  type ReactNode,
+} from "react";
+import {
+  type User,
+  getMe,
+  login as apiLogin,
+  register as apiRegister,
+  mergeCart,
+} from "./api";
 
 interface AuthContextType {
   user: User | null;
@@ -9,7 +22,12 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   loginWithGoogle: (credential: string) => Promise<void>;
-  register: (data: { email: string; password: string; name: string; phone?: string }) => Promise<void>;
+  register: (data: {
+    email: string;
+    password: string;
+    name: string;
+    phone?: string;
+  }) => Promise<void>;
   logout: () => void;
 }
 
@@ -41,49 +59,69 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     initAuth();
   }, []);
 
-  const handleAuthSuccess = useCallback(async (authUser: User, authToken: string) => {
-    localStorage.setItem(TOKEN_KEY, authToken);
-    setUser(authUser);
-    setToken(authToken);
+  const handleAuthSuccess = useCallback(
+    async (authUser: User, authToken: string) => {
+      localStorage.setItem(TOKEN_KEY, authToken);
 
-    // Merge guest cart if exists
-    const sessionId = localStorage.getItem(SESSION_KEY);
-    if (sessionId) {
-      try {
-        await mergeCart(sessionId, authToken);
-        localStorage.removeItem(SESSION_KEY);
-      } catch (error) {
-        console.error("Failed to merge cart:", error);
+      // Merge the guest cart BEFORE updating state, so the cart provider (which
+      // reloads when the token changes) fetches the already-merged cart.
+      const sessionId = localStorage.getItem(SESSION_KEY);
+      if (sessionId) {
+        try {
+          await mergeCart(sessionId, authToken);
+          localStorage.removeItem(SESSION_KEY);
+        } catch (error) {
+          console.error("Failed to merge cart:", error);
+        }
       }
-    }
-  }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const { user, token } = await apiLogin(email, password);
-    await handleAuthSuccess(user, token);
-  }, [handleAuthSuccess]);
+      setUser(authUser);
+      setToken(authToken);
+    },
+    [],
+  );
 
-  const loginWithGoogle = useCallback(async (credential: string) => {
-    const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
-    const response = await fetch(`${API_BASE}/auth/google`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ credential }),
-    });
-    
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || "Failed to authenticate with Google");
-    }
-    
-    const { user, token } = await response.json();
-    await handleAuthSuccess(user, token);
-  }, [handleAuthSuccess]);
+  const login = useCallback(
+    async (email: string, password: string) => {
+      const { user, token } = await apiLogin(email, password);
+      await handleAuthSuccess(user, token);
+    },
+    [handleAuthSuccess],
+  );
 
-  const register = useCallback(async (data: { email: string; password: string; name: string; phone?: string }) => {
-    const { user, token } = await apiRegister(data);
-    await handleAuthSuccess(user, token);
-  }, [handleAuthSuccess]);
+  const loginWithGoogle = useCallback(
+    async (credential: string) => {
+      const API_BASE =
+        process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+      const response = await fetch(`${API_BASE}/auth/google`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credential }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to authenticate with Google");
+      }
+
+      const { user, token } = await response.json();
+      await handleAuthSuccess(user, token);
+    },
+    [handleAuthSuccess],
+  );
+
+  const register = useCallback(
+    async (data: {
+      email: string;
+      password: string;
+      name: string;
+      phone?: string;
+    }) => {
+      const { user, token } = await apiRegister(data);
+      await handleAuthSuccess(user, token);
+    },
+    [handleAuthSuccess],
+  );
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
@@ -92,7 +130,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, loginWithGoogle, register, logout }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        token,
+        isLoading,
+        login,
+        loginWithGoogle,
+        register,
+        logout,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
@@ -108,7 +156,7 @@ export function useAuth() {
 
 export function getSessionId(): string {
   if (typeof window === "undefined") return "";
-  
+
   let sessionId = localStorage.getItem(SESSION_KEY);
   if (!sessionId) {
     sessionId = crypto.randomUUID();
